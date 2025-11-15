@@ -1,0 +1,4 @@
+repository "8800/8800 2025-10-15_17-23-51@3573995700922@cloud"
+  path "/"
+    br "/main"
+    co "/main"

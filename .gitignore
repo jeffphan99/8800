@@ -1,0 +1,76 @@
+ 
+# Unity generated files
+/[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+
+# Unity Editor files
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity Asset meta files 
+/[Aa]ssets/**/*.meta
+
+# Build output
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+# Crash and error logs
+sysinfo.txt
+crashlytics*
+
+# Dependency packages
+/[Pp]ackages/*
+!/Packages/manifest.json
+!/Packages/packages-lock.json
+
+# Visual Studio / Rider
+.idea/
+*.vs/
+*.vscode/
+
+# Mac OS files
+.DS_Store
+
+# Windows files
+Thumbs.db
+Desktop.ini
+
+# Linux files
+*~
+
+# Gradle cache
+.gradle/
+
+# Unity Playmode and Simulation tests
+/[Pp]laymode[Tt]ests/
+/[Ss]imulation[Tt]ests/
+
+# Ignore exported packages
+/[Ee]xported[Pp]ackages/
+
+# Ignore local configuration overrides
+/[Aa]ssets/**/LocalConfig.json
+/[Aa]ssets/**/LocalSettings.json
+
+# Ignore sensitive data
+/[Aa]ssets/**/Credentials.json
+/[Aa]ssets/**/Secrets.json
