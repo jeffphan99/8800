@@ -41,22 +41,34 @@ public class MonsterAI : MonoBehaviour
     [Range(0f, 1f)]
     public float wakeUpVolume = 0.8f;
 
-    private Transform player;
-    private float lastAttackTime;
-    private bool isAsleep = false;
-    public bool isActive { get; private set; }
-    private Vector3 originalPosition;
-    private Quaternion originalRotation;
-    private Animator animator;
-    private NavMeshAgent agent;
+    [Header("Light Breaking")]
+    public float lightBreakRadius = 4f;
+    public float lightCheckInterval = 0.5f;
+    protected float lastLightCheckTime = 0f;
 
-    private enum AIState { Idle, Patrolling, Chasing, Attacking }
-    private AIState currentState = AIState.Idle;
-    private bool isWaiting = false;
-    private Vector3 lastKnownPlayerPosition;
+    [Header("Flashlight Interaction")]
+    public bool affectedByFlashlight = false;
+    public float flashlightSlowMultiplier = 0.3f;
+    public float flashlightEffectDuration = 0.5f;
+    protected float flashlightEffectTimer = 0f;
+    protected bool isFlashlightShining = false;
 
-    private AudioSource footstepAudioSource;
-    private AudioSource effectAudioSource;
+    protected Transform player;
+    protected float lastAttackTime;
+    protected bool isAsleep = false;
+    public bool isActive { get; protected set; }
+    protected Vector3 originalPosition;
+    protected Quaternion originalRotation;
+    protected Animator animator;
+    protected NavMeshAgent agent;
+
+    protected enum AIState { Idle, Patrolling, Chasing, Attacking }
+    protected AIState currentState = AIState.Idle;
+    protected bool isWaiting = false;
+    protected Vector3 lastKnownPlayerPosition;
+
+    protected AudioSource footstepAudioSource;
+    protected AudioSource effectAudioSource;
 
     void Awake()
     {
@@ -82,14 +94,14 @@ public class MonsterAI : MonoBehaviour
         footstepAudioSource.clip = footstepSound;
         footstepAudioSource.loop = true;
         footstepAudioSource.volume = footstepVolume;
-        footstepAudioSource.spatialBlend = 1f; // 3D sound
+        footstepAudioSource.spatialBlend = 1f;
         footstepAudioSource.playOnAwake = false;
         footstepAudioSource.maxDistance = 20f;
 
         effectAudioSource = gameObject.AddComponent<AudioSource>();
         effectAudioSource.loop = false;
         effectAudioSource.volume = wakeUpVolume;
-        effectAudioSource.spatialBlend = 1f; // 3D sound
+        effectAudioSource.spatialBlend = 1f;
         effectAudioSource.playOnAwake = false;
         effectAudioSource.maxDistance = 25f;
     }
@@ -119,9 +131,8 @@ public class MonsterAI : MonoBehaviour
         DeactivateMonster();
     }
 
-    void Update()
+    protected virtual void Update()
     {
-
         if (isAsleep || !isActive)
         {
             StopFootsteps();
@@ -131,15 +142,26 @@ public class MonsterAI : MonoBehaviour
 
         if (player == null) return;
 
+        // Check for lights to break
+        if (Time.time >= lastLightCheckTime + lightCheckInterval)
+        {
+            CheckForLightsToBreak();
+            lastLightCheckTime = Time.time;
+        }
+
+        // Handle flashlight effect
+        UpdateFlashlightEffect();
+
         float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
+        // Check for noise
         CheckForNoise();
 
         switch (currentState)
         {
             case AIState.Idle:
             case AIState.Patrolling:
-                if (distanceToPlayer <= detectionRange)
+                if (DetectPlayer())
                 {
                     EnterChaseState();
                 }
@@ -181,29 +203,25 @@ public class MonsterAI : MonoBehaviour
                 break;
         }
 
-        if (agent.velocity.magnitude > 0.1f && currentState != AIState.Attacking)
-        {
-            PlayFootsteps();
-        }
-        else
-        {
-            StopFootsteps();
-        }
-
-        if (animator != null)
-        {
-            animator.SetBool("Run", agent.velocity.magnitude > 0.1f);
-        }
+        UpdateFootsteps();
+        UpdateAnimator();
     }
 
-    void EnterPatrolState()
+    protected virtual bool DetectPlayer()
+    {
+        // Default detection: simple distance check
+        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
+        return distanceToPlayer <= detectionRange;
+    }
+
+    protected void EnterPatrolState()
     {
         currentState = AIState.Patrolling;
         agent.speed = patrolSpeed;
         agent.isStopped = false;
     }
 
-    void EnterChaseState()
+    protected void EnterChaseState()
     {
         currentState = AIState.Chasing;
         agent.speed = chaseSpeed;
@@ -211,13 +229,13 @@ public class MonsterAI : MonoBehaviour
         lastKnownPlayerPosition = player.position;
     }
 
-    void EnterAttackState()
+    protected void EnterAttackState()
     {
         currentState = AIState.Attacking;
         agent.isStopped = true;
     }
 
-    void CheckForNoise()
+    protected virtual void CheckForNoise()
     {
         Collider[] noiseSources = Physics.OverlapSphere(transform.position, noiseDetectionRange, noiseSourceLayer);
 
@@ -251,7 +269,7 @@ public class MonsterAI : MonoBehaviour
         }
     }
 
-    bool HasReachedDestination()
+    protected bool HasReachedDestination()
     {
         if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
         {
@@ -280,7 +298,7 @@ public class MonsterAI : MonoBehaviour
         isWaiting = false;
     }
 
-    Vector3 GetRandomNavMeshPoint(Vector3 center, float radius)
+    protected Vector3 GetRandomNavMeshPoint(Vector3 center, float radius)
     {
         Vector3 randomDirection = Random.insideUnitSphere * radius;
         randomDirection += center;
@@ -304,6 +322,26 @@ public class MonsterAI : MonoBehaviour
         else
         {
             agent.SetDestination(lastKnownPlayerPosition);
+        }
+    }
+
+    protected void UpdateFootsteps()
+    {
+        if (agent.velocity.magnitude > 0.1f && currentState != AIState.Attacking)
+        {
+            PlayFootsteps();
+        }
+        else
+        {
+            StopFootsteps();
+        }
+    }
+
+    protected void UpdateAnimator()
+    {
+        if (animator != null)
+        {
+            animator.SetBool("Run", agent.velocity.magnitude > 0.1f);
         }
     }
 
@@ -364,7 +402,6 @@ public class MonsterAI : MonoBehaviour
         }
     }
 
-    // CALLED BY GUN
     public void Sleep(float duration)
     {
         if (!isAsleep && isActive)
@@ -387,7 +424,6 @@ public class MonsterAI : MonoBehaviour
             animator.SetTrigger("Sleep");
         }
 
-        // Lay down
         Quaternion sleepRotation = Quaternion.Euler(90f, transform.eulerAngles.y, transform.eulerAngles.z);
         float elapsed = 0f;
 
@@ -405,7 +441,6 @@ public class MonsterAI : MonoBehaviour
 
         Debug.Log("Monster is waking up");
 
-        // Play wake up sound
         if (wakeUpSound != null)
         {
             effectAudioSource.PlayOneShot(wakeUpSound, wakeUpVolume);
@@ -432,7 +467,6 @@ public class MonsterAI : MonoBehaviour
         }
     }
 
-    // CALLED BY GAME MANAGER
     public void ActivateMonster()
     {
         isActive = true;
@@ -443,9 +477,19 @@ public class MonsterAI : MonoBehaviour
             agent.enabled = true;
             agent.isStopped = false;
         }
-        effectAudioSource.PlayOneShot(wakeUpSound, wakeUpVolume);
+
+        if (wakeUpSound != null && effectAudioSource != null)
+        {
+            effectAudioSource.PlayOneShot(wakeUpSound, wakeUpVolume);
+        }
+
         EnterPatrolState();
         Debug.Log($"Monster has been activated!");
+
+        if (MinimapManager.Instance != null)
+        {
+            MinimapManager.Instance.UpdateMonsterIcon(this, true);
+        }
     }
 
     public void DeactivateMonster()
@@ -461,6 +505,11 @@ public class MonsterAI : MonoBehaviour
 
         StopFootsteps();
         Debug.Log($"Monster has been deactivated");
+
+        if (MinimapManager.Instance != null)
+        {
+            MinimapManager.Instance.UpdateMonsterIcon(this, false);
+        }
     }
 
     public void ResetMonster()
@@ -484,6 +533,58 @@ public class MonsterAI : MonoBehaviour
         Debug.Log($"Monster has been reset");
     }
 
+    void CheckForLightsToBreak()
+    {
+        Collider[] nearbyColliders = Physics.OverlapSphere(transform.position, lightBreakRadius);
+
+        foreach (Collider col in nearbyColliders)
+        {
+            RoomLight light = col.GetComponent<RoomLight>();
+            if (light != null && light.isOn && !light.isBroken && light.canBeBroken)
+            {
+                light.BreakLight();
+            }
+        }
+    }
+
+    void UpdateFlashlightEffect()
+    {
+        if (!affectedByFlashlight) return;
+
+        if (flashlightEffectTimer > 0)
+        {
+            flashlightEffectTimer -= Time.deltaTime;
+
+            if (flashlightEffectTimer <= 0)
+            {
+                isFlashlightShining = false;
+                RestoreNormalSpeed();
+            }
+        }
+    }
+
+    public virtual void OnFlashlightShone()
+    {
+        if (!affectedByFlashlight || !isActive) return;
+
+        isFlashlightShining = true;
+        flashlightEffectTimer = flashlightEffectDuration;
+
+        if (agent != null)
+        {
+            float currentSpeed = (currentState == AIState.Chasing) ? chaseSpeed : patrolSpeed;
+            agent.speed = currentSpeed * flashlightSlowMultiplier;
+        }
+    }
+
+    void RestoreNormalSpeed()
+    {
+        if (agent != null)
+        {
+            agent.speed = (currentState == AIState.Chasing) ? chaseSpeed : patrolSpeed;
+        }
+    }
+
     public void OnNoiseDetected(Vector3 noisePosition)
     {
         if (!isAsleep && isActive && currentState != AIState.Chasing && currentState != AIState.Attacking)
@@ -496,7 +597,7 @@ public class MonsterAI : MonoBehaviour
         }
     }
 
-    void OnDrawGizmosSelected()
+    protected virtual void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(transform.position, detectionRange);

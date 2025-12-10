@@ -1,16 +1,16 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI; // Keep this for Text components
+using UnityEngine.UI;
 
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance;
 
     [Header("Round Settings")]
-    public float roundTime = 120f; // 2 minutes per round
-    public float terminalBreakInterval = 30f; // Terminal breaks every 30 seconds
-    public float terminalRepairTime = 15f; // Player has 15 seconds to fix it
+    public float roundTime = 120f;
+    public float terminalBreakInterval = 30f;
+    public float terminalRepairTime = 15f;
 
     [Header("References")]
     public Transform playerSpawnPoint;
@@ -23,8 +23,6 @@ public class GameManager : MonoBehaviour
     public Text roundTimerText;
     public Text terminalWarningText;
     public Text gameStatusText;
-
-    // NEW UI REFERENCES
     public GameObject winPanel;
     public GameObject losePanel;
 
@@ -39,7 +37,6 @@ public class GameManager : MonoBehaviour
 
     void Awake()
     {
-        // Singleton pattern
         if (Instance == null)
         {
             Instance = this;
@@ -52,27 +49,47 @@ public class GameManager : MonoBehaviour
 
     void Start()
     {
+        Debug.Log("=== GAME MANAGER START ===");
+
         // Find player
         player = GameObject.FindGameObjectWithTag("Player");
+        Debug.Log($"Player found: {player != null}");
 
-        // Auto-find components
-        if (allTerminals.Count == 0)
+        // CLEAR LISTS FIRST (removes old/invalid references from Inspector)
+        allTerminals.Clear();
+        allMonsters.Clear();
+        allDoors.Clear();
+
+        // Find terminals - INCLUDE INACTIVE
+        allTerminals.AddRange(FindObjectsOfType<Terminal>(true));
+        Debug.Log($"[GameManager] Found {allTerminals.Count} terminals");
+
+        // Find monsters - INCLUDE INACTIVE (CRITICAL!)
+        allMonsters.AddRange(FindObjectsOfType<MonsterAI>(true));
+        Debug.Log($"[GameManager] Found {allMonsters.Count} monsters:");
+
+        foreach (MonsterAI monster in allMonsters)
         {
-            allTerminals.AddRange(FindObjectsOfType<Terminal>());
+            if (monster != null)
+            {
+                Debug.Log($"[GameManager]   - {monster.gameObject.name} ({monster.GetType().Name})");
+            }
         }
+
         if (allMonsters.Count == 0)
         {
-            allMonsters.AddRange(FindObjectsOfType<MonsterAI>());
+            Debug.LogError("[GameManager] NO MONSTERS FOUND!");
         }
-        if (allDoors.Count == 0)
-        {
-            allDoors.AddRange(FindObjectsOfType<Door>());
-        }
+
+        // Find doors - INCLUDE INACTIVE
+        allDoors.AddRange(FindObjectsOfType<Door>(true));
+        Debug.Log($"[GameManager] Found {allDoors.Count} doors");
 
         // Ensure panels are hidden at start
         if (winPanel != null) winPanel.SetActive(false);
         if (losePanel != null) losePanel.SetActive(false);
 
+        Debug.Log("=== GAME MANAGER START COMPLETE ===");
         StartNewRound();
     }
 
@@ -80,26 +97,22 @@ public class GameManager : MonoBehaviour
     {
         if (!roundActive) return;
 
-        // Update round timer
         currentRoundTime -= Time.deltaTime;
         UpdateTimerUI();
 
-        // Check if round time is up
         if (currentRoundTime <= 0)
         {
-            EndRound(true); // Player survived!
+            EndRound(true);
             return;
         }
 
-        // IMPORTANT: Check terminal deadline FIRST (higher priority)
         if (terminalNeedsRepair && Time.time >= terminalBreakDeadline)
         {
             Debug.Log($"[GameManager] Terminal repair deadline reached! Time: {Time.time}, Deadline: {terminalBreakDeadline}");
             TerminalRepairFailed();
-            return; // Stop here to process the failure
+            return;
         }
 
-        // Check if it's time to break a terminal
         if (!terminalNeedsRepair && Time.time >= nextTerminalBreakTime)
         {
             BreakRandomTerminal();
@@ -113,39 +126,41 @@ public class GameManager : MonoBehaviour
         currentRoundTime = roundTime;
         terminalNeedsRepair = false;
 
-        // Hide end-game UI panels
         if (winPanel != null) winPanel.SetActive(false);
         if (losePanel != null) losePanel.SetActive(false);
 
-        // Reset player position
         ResetPlayer();
 
-        // Reset and deactivate all monsters
+        // Reset and deactivate all monsters - WITH NULL CHECK
         foreach (MonsterAI monster in allMonsters)
         {
-            monster.ResetMonster();
-            monster.DeactivateMonster();
+            if (monster != null)
+            {
+                monster.ResetMonster();
+                monster.DeactivateMonster();
+            }
         }
 
-        // Close all doors
+        // Close all doors - WITH NULL CHECK
         foreach (Door door in allDoors)
         {
-            if (door.isOpen)
+            if (door != null && door.isOpen)
             {
                 door.ToggleDoor();
             }
         }
 
-        // Reset all terminals
+        // Reset all terminals - WITH NULL CHECK
         foreach (Terminal terminal in allTerminals)
         {
-            terminal.ResetTerminal();
+            if (terminal != null)
+            {
+                terminal.ResetTerminal();
+            }
         }
 
-        // Schedule first terminal break
         nextTerminalBreakTime = Time.time + terminalBreakInterval;
 
-        // Update UI
         if (gameStatusText != null)
         {
             gameStatusText.text = "";
@@ -163,11 +178,10 @@ public class GameManager : MonoBehaviour
     {
         if (allTerminals.Count == 0) return;
 
-        // Pick a random working terminal
         List<Terminal> workingTerminals = new List<Terminal>();
         foreach (Terminal terminal in allTerminals)
         {
-            if (!terminal.isBroken)
+            if (terminal != null && !terminal.isBroken)
             {
                 workingTerminals.Add(terminal);
             }
@@ -183,7 +197,6 @@ public class GameManager : MonoBehaviour
 
         Debug.Log($"Terminal {currentBrokenTerminal.gameObject.name} has broken! Fix it in {terminalRepairTime} seconds!");
 
-        // Update UI
         if (terminalWarningText != null)
         {
             terminalWarningText.text = $"⚠ TERMINAL MALFUNCTION! Fix it quickly!";
@@ -199,10 +212,8 @@ public class GameManager : MonoBehaviour
             terminalNeedsRepair = false;
             currentBrokenTerminal = null;
 
-            // Schedule next terminal break
             nextTerminalBreakTime = Time.time + terminalBreakInterval;
 
-            // Update UI
             if (terminalWarningText != null)
             {
                 terminalWarningText.text = "Terminal repaired! All systems operational";
@@ -213,26 +224,65 @@ public class GameManager : MonoBehaviour
 
     void TerminalRepairFailed()
     {
-        Debug.Log("=== TERMINAL REPAIR FAILED! RELEASING MONSTER! ===");
+        Debug.Log("=== TERMINAL REPAIR FAILED! ===");
+        Debug.Log($"[GameManager] Total monsters in list: {allMonsters.Count}");
+        Debug.Log($"[GameManager] Total doors in list: {allDoors.Count}");
+
         terminalNeedsRepair = false;
 
-        // Activate a random monster
+        // Activate a random monster - WITH NULL CHECKS
         if (allMonsters.Count > 0)
         {
-            MonsterAI randomMonster = allMonsters[Random.Range(0, allMonsters.Count)];
-            randomMonster.ActivateMonster();
+            // Filter out null monsters first
+            List<MonsterAI> validMonsters = new List<MonsterAI>();
+            foreach (MonsterAI m in allMonsters)
+            {
+                if (m != null)
+                {
+                    validMonsters.Add(m);
+                }
+            }
+
+            Debug.Log($"[GameManager] Valid monsters: {validMonsters.Count}");
+
+            if (validMonsters.Count > 0)
+            {
+                int randomIndex = Random.Range(0, validMonsters.Count);
+                MonsterAI randomMonster = validMonsters[randomIndex];
+
+                Debug.Log($"[GameManager] Selected monster: {randomMonster.gameObject.name}");
+                Debug.Log($"[GameManager] Monster type: {randomMonster.GetType().Name}");
+                Debug.Log($"[GameManager] Calling ActivateMonster()...");
+
+                randomMonster.ActivateMonster();
+
+                Debug.Log($"[GameManager] Monster isActive: {randomMonster.isActive}");
+            }
+            else
+            {
+                Debug.LogError("[GameManager] All monsters in list are null!");
+            }
+        }
+        else
+        {
+            Debug.LogError("[GameManager] NO MONSTERS IN LIST!");
         }
 
-        // Open all doors
+        // Open all doors - WITH NULL CHECK
+        Debug.Log("[GameManager] Opening all doors...");
         foreach (Door door in allDoors)
         {
-            if (!door.isOpen)
+            if (door != null)
             {
-                door.ToggleDoor();
+                Debug.Log($"[GameManager]   Door: {door.gameObject.name}, isOpen: {door.isOpen}");
+                if (!door.isOpen)
+                {
+                    door.ToggleDoor();
+                    Debug.Log($"[GameManager]   Toggled door: {door.gameObject.name}");
+                }
             }
         }
 
-        // Update UI
         if (terminalWarningText != null)
         {
             terminalWarningText.text = "⚠ CONTAINMENT BREACH! MONSTER RELEASED!";
@@ -245,8 +295,9 @@ public class GameManager : MonoBehaviour
             gameStatusText.color = Color.red;
         }
 
-        // Schedule next terminal break
         nextTerminalBreakTime = Time.time + terminalBreakInterval;
+
+        Debug.Log("=== TERMINAL REPAIR FAILED - COMPLETE ===");
     }
 
     void ResetPlayer()
@@ -259,7 +310,6 @@ public class GameManager : MonoBehaviour
             player.transform.rotation = playerSpawnPoint.rotation;
         }
 
-        // Reset player velocity if has rigidbody
         Rigidbody rb = player.GetComponent<Rigidbody>();
         if (rb != null)
         {
@@ -267,7 +317,6 @@ public class GameManager : MonoBehaviour
             rb.angularVelocity = Vector3.zero;
         }
 
-        // Reset player health if exists
         PlayerHealth health = player.GetComponent<PlayerHealth>();
         if (health != null)
         {
@@ -279,10 +328,12 @@ public class GameManager : MonoBehaviour
     {
         roundActive = false;
 
-        // DEACTIVATE ALL MONSTERS (Stop chasing immediately)
         foreach (MonsterAI monster in allMonsters)
         {
-            monster.DeactivateMonster();
+            if (monster != null)
+            {
+                monster.DeactivateMonster();
+            }
         }
 
         if (playerWon)
@@ -302,7 +353,6 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        // Start new round after delay
         Invoke(nameof(StartNewRound), 3f);
     }
 
@@ -322,7 +372,6 @@ public class GameManager : MonoBehaviour
             int seconds = Mathf.FloorToInt(currentRoundTime % 60f);
             roundTimerText.text = $"Time: {minutes:00}:{seconds:00}";
 
-            // Change color as time runs out
             if (currentRoundTime < 30f)
             {
                 roundTimerText.color = Color.red;
@@ -337,7 +386,6 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        // Update terminal repair countdown
         if (terminalNeedsRepair && terminalWarningText != null)
         {
             float timeLeft = terminalBreakDeadline - Time.time;

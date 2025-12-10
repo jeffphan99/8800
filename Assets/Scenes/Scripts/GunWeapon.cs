@@ -44,6 +44,8 @@ public class GunWeapon : WeaponBase
     {
         if (_input == null) return;
 
+        if (!gameObject.activeInHierarchy) return;
+
         // Don't shoot if minigame active
         Terminal activeTerminal = FindObjectOfType<Terminal>();
         if (activeTerminal != null && activeTerminal.minigameActive)
@@ -59,11 +61,6 @@ public class GunWeapon : WeaponBase
             _input.fire = false;
         }
 
-        if (_input.reload && currentAmmo < maxAmmo && !isReloading)
-        {
-            SecondaryAction();
-            _input.reload = false;
-        }
     }
 
     public override void PrimaryAction()

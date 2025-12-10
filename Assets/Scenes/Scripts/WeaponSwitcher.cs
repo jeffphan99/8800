@@ -37,8 +37,13 @@ namespace StarterAssets
             {
                 if (weapons[i] != null)
                 {
+                    Debug.Log($"Setting up weapon {i}: {weapons[i].gameObject.name}");
                     weapons[i].SetSharedReferences(playerCamera, statusText, actionText);
                     weapons[i].gameObject.SetActive(false);
+                }
+                else
+                {
+                    Debug.LogWarning($"Weapon slot {i} is NULL!");
                 }
             }
 

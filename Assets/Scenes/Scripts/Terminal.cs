@@ -290,8 +290,13 @@ public class Terminal : MonoBehaviour
     {
         isBroken = true;
         Debug.Log($"Terminal {gameObject.name} has broken!");
-
         UpdateVisuals();
+
+        // ADD THIS:
+        if (MinimapManager.Instance != null)
+        {
+            MinimapManager.Instance.UpdateTerminalIcon(this);
+        }
     }
 
     public void ResetTerminal()
@@ -300,9 +305,14 @@ public class Terminal : MonoBehaviour
         minigameActive = false;
         currentIndex = 0;
         targetSequence.Clear();
-
         HideUI();
         UpdateVisuals();
+
+        // ADD THIS:
+        if (MinimapManager.Instance != null)
+        {
+            MinimapManager.Instance.UpdateTerminalIcon(this);
+        }
     }
 
     void UpdateVisuals()
