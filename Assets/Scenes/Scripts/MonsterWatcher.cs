@@ -87,6 +87,7 @@ public class MonsterWatcher : MonsterAI
 
     public override void OnFlashlightShone()
     {
+        base.OnFlashlightShone();
         isBeingWatched = true;
         lastFlashlightCheckTime = Time.time;
     }

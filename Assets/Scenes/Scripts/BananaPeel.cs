@@ -7,7 +7,7 @@ public class BananaPeel : MonoBehaviour
     public float monsterTripDuration = 4f;
     public float playerTripDuration = 2f;
     public float peelLifetime = 30f;
-    public float armingDelay = 0.5f; // NEW: Wait before peel is active
+    public float armingDelay = 0.5f; //Wait before peel is active
 
     [Header("Audio")]
     public AudioClip slipSound;
@@ -15,7 +15,7 @@ public class BananaPeel : MonoBehaviour
 
     private bool hasTrippedMonster = false;
     private bool hasTrippedPlayer = false;
-    private bool isArmed = false; // NEW: Peel isn't active immediately
+    private bool isArmed = false; // Peel isn't active immediately
 
     void Start()
     {

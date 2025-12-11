@@ -10,8 +10,12 @@ public class Door : MonoBehaviour
     public float openSpeed = 3f;
     public bool startsOpen = false;
 
+    [Header("Interaction Settings")]
+    [Range(1f, 10f)]
+    public float interactDistance = 3f;
+
     private Vector3 closedPosition;
-    public bool isOpen { get; private set; } 
+    public bool isOpen { get; private set; }
     private bool isMoving = false;
 
     void Start()
@@ -27,6 +31,31 @@ public class Door : MonoBehaviour
         if (startsOpen)
         {
             doorTransform.localPosition = closedPosition + openPosition;
+        }
+
+        AutoSetupInteraction();
+    }
+
+    void AutoSetupInteraction()
+    {
+
+        Interactable interactable = GetComponent<Interactable>();
+
+        if (interactable != null)
+        {
+
+            interactable.interactionRange = interactDistance;
+
+            interactable.onInteract.RemoveListener(ToggleDoor);
+
+
+            interactable.onInteract.AddListener(ToggleDoor);
+
+            Debug.Log($"[Door] Auto-wired interaction for {gameObject.name} with range {interactDistance}");
+        }
+        else
+        {
+            Debug.LogWarning($"[Door] {gameObject.name} has a Door script but NO Interactable script!");
         }
     }
 

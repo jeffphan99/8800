@@ -3,7 +3,6 @@ using System.Collections.Generic;
 
 public class MinimapManager : MonoBehaviour
 {
-    // SINGLETON PATTERN - THIS WAS MISSING THE PROPER SETUP
     public static MinimapManager Instance { get; private set; }
 
     [Header("Camera Settings")]
@@ -74,7 +73,7 @@ public class MinimapManager : MonoBehaviour
         }
 
         // Auto-find and track objects
-        Invoke(nameof(AutoTrackObjects), 0.1f); // Slight delay to ensure everything is initialized
+        Invoke(nameof(AutoTrackObjects), 0.1f);
     }
 
     void LateUpdate()
@@ -258,17 +257,4 @@ public class MinimapManager : MonoBehaviour
         }
     }
 
-    // Optional: Add zoom functionality
-    void Update()
-    {
-        // Uncomment to enable scroll wheel zoom
-        /*
-        float scroll = Input.GetAxis("Mouse ScrollWheel");
-        if (scroll != 0 && minimapCamera != null)
-        {
-            orthographicSize = Mathf.Clamp(orthographicSize - scroll * 5f, 10f, 50f);
-            minimapCamera.orthographicSize = orthographicSize;
-        }
-        */
-    }
 }

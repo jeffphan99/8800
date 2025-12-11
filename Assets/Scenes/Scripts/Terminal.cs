@@ -21,13 +21,19 @@ public class Terminal : MonoBehaviour
 
     private StarterAssetsInputs playerInput;
     private FirstPersonController playerController;
+    private WeaponSwitcher weaponSwitcher; // Reference to the weapon switcher
 
     [Header("Visual Feedback")]
-    public GameObject visualSphere; 
-    public Light terminalLight; 
-    public Material brokenMaterial; 
-    public Material workingMaterial; 
+    public GameObject visualSphere;
+    public Light terminalLight;
+    public Material brokenMaterial;
+    public Material workingMaterial;
     private Renderer sphereRenderer;
+
+    [Header("Break Effects")]
+    public ParticleSystem breakParticleEffect; // Sparks/smoke when terminal breaks
+    public AudioClip breakSound; // Sound when breaking
+    public AudioSource audioSource;
 
     void Start()
     {
@@ -36,14 +42,19 @@ public class Terminal : MonoBehaviour
         playerInput = FindObjectOfType<StarterAssetsInputs>();
         playerController = FindObjectOfType<FirstPersonController>();
 
- 
+        // Find the weapon switcher on the player
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        if (player != null)
+        {
+            weaponSwitcher = player.GetComponentInChildren<WeaponSwitcher>();
+        }
+
         if (visualSphere != null)
         {
             sphereRenderer = visualSphere.GetComponent<Renderer>();
         }
         else
         {
-            Debug.LogWarning("Visual Sphere not assigned! Trying to find child named 'Sphere'");
             Transform sphereTransform = transform.Find("Sphere");
             if (sphereTransform != null)
             {
@@ -52,56 +63,63 @@ public class Terminal : MonoBehaviour
             }
         }
 
-    
-        if (sequenceText == null)
+        if (sequenceText == null) sequenceText = GameObject.Find("SequenceText")?.GetComponent<Text>();
+        if (feedbackText == null) feedbackText = GameObject.Find("FeedbackText")?.GetComponent<Text>();
+        if (minigameUI == null) minigameUI = GameObject.Find("MinigamePanel");
+
+        // Set up audio source if not assigned
+        if (audioSource == null)
         {
-            sequenceText = GameObject.Find("SequenceText")?.GetComponent<Text>();
+            audioSource = GetComponent<AudioSource>();
+            if (audioSource == null)
+            {
+                audioSource = gameObject.AddComponent<AudioSource>();
+                audioSource.playOnAwake = false;
+            }
         }
 
-        if (feedbackText == null)
-        {
-            feedbackText = GameObject.Find("FeedbackText")?.GetComponent<Text>();
-        }
-
-        if (minigameUI == null)
-        {
-            minigameUI = GameObject.Find("MinigamePanel");
-        }
-
-        // HIDE UI at start
         HideUI();
-
         UpdateVisuals();
     }
 
     public void StartMinigame()
     {
-
         if (!isBroken)
         {
             Debug.Log("Terminal is working fine - no repair needed");
-
             ShowUI();
             if (feedbackText != null)
             {
                 feedbackText.text = "Terminal operational - no repair needed";
                 feedbackText.color = Color.green;
             }
-            if (sequenceText != null)
-            {
-                sequenceText.text = "";
-            }
+            if (sequenceText != null) sequenceText.text = "";
 
- 
+            Invoke(nameof(HideUI), 2f);
+            return;
+        }
+
+        if (!IsRepairToolEquipped())
+        {
+            Debug.Log("You need the repair tool equipped!");
+
+            // Show a warning message using your existing UI
+            ShowUI();
+            if (feedbackText != null)
+            {
+                feedbackText.text = "Equip Repair Tool to fix! (Press 3)";
+                feedbackText.color = Color.red;
+            }
+            if (sequenceText != null) sequenceText.text = "";
+
+            // Hide the warning after 2 seconds
             Invoke(nameof(HideUI), 2f);
             return;
         }
 
         Debug.Log("=== START REPAIR MINIGAME ===");
 
-
         ShowUI();
-
         minigameActive = true;
         currentIndex = 0;
 
@@ -122,6 +140,7 @@ public class Terminal : MonoBehaviour
             feedbackText.color = Color.yellow;
         }
 
+        // Lock Player Movement
         if (playerInput != null)
         {
             playerInput.cursorLocked = false;
@@ -143,12 +162,10 @@ public class Terminal : MonoBehaviour
     {
         if (!minigameActive) return;
 
-
         foreach (KeyCode key in possibleKeys)
         {
             if (Input.GetKeyDown(key))
             {
-                Debug.Log($"Key pressed: {key}, Expected: {targetSequence[currentIndex]}");
                 CheckKey(key);
                 break;
             }
@@ -157,7 +174,6 @@ public class Terminal : MonoBehaviour
         // ESC to cancel
         if (Input.GetKeyDown(KeyCode.Escape))
         {
-            Debug.Log("ESC pressed - canceling repair");
             CancelMinigame();
         }
     }
@@ -166,8 +182,6 @@ public class Terminal : MonoBehaviour
     {
         if (pressedKey == targetSequence[currentIndex])
         {
-
-            Debug.Log($"CORRECT! Progress: {currentIndex + 1}/{targetSequence.Count}");
             currentIndex++;
 
             if (currentIndex >= targetSequence.Count)
@@ -199,44 +213,27 @@ public class Terminal : MonoBehaviour
 
     void UpdateSequenceDisplay()
     {
-        if (sequenceText == null)
-        {
-            Debug.LogError("sequenceText is NULL - cannot update display!");
-            return;
-        }
+        if (sequenceText == null) return;
 
         string display = "";
         for (int i = 0; i < targetSequence.Count; i++)
         {
             if (i < currentIndex)
-            {
-
                 display += $"<color=green>✓{KeyToString(targetSequence[i])}</color> ";
-            }
             else if (i == currentIndex)
-            {
-
                 display += $"<color=yellow><b>[{KeyToString(targetSequence[i])}]</b></color> ";
-            }
             else
-            {
-  
                 display += $"{KeyToString(targetSequence[i])} ";
-            }
         }
 
         sequenceText.text = display.Trim();
     }
 
-    string KeyToString(KeyCode key)
-    {
-        return key.ToString();
-    }
+    string KeyToString(KeyCode key) { return key.ToString(); }
 
     void CompleteMinigame()
     {
         Debug.Log("=== TERMINAL REPAIRED! ===");
-
         isBroken = false;
 
         if (feedbackText != null)
@@ -245,58 +242,83 @@ public class Terminal : MonoBehaviour
             feedbackText.color = Color.green;
         }
 
-
         if (GameManager.Instance != null)
         {
             GameManager.Instance.OnTerminalRepaired(this);
         }
 
+        if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateTerminalIcon(this);
+
         UpdateVisuals();
-
         Invoke(nameof(CloseMinigame), 2f);
+
+        // Get the particle system on the assigned GameObject
+        ParticleSystem mainPS = breakParticleEffect.GetComponent<ParticleSystem>();
+        if (mainPS != null)
+        {
+            Debug.Log($"[Terminal] Stopping main particle: {mainPS.gameObject.name}");
+            mainPS.Stop();
+        }
+
     }
 
-    void CancelMinigame()
-    {
-        CloseMinigame();
-    }
+    void CancelMinigame() { CloseMinigame(); }
 
     void CloseMinigame()
     {
-        Debug.Log("=== CLOSING MINIGAME ===");
         minigameActive = false;
-
-
         HideUI();
 
-        // Re-enable player input
         if (playerInput != null)
         {
             playerInput.cursorLocked = true;
             playerInput.cursorInputForLook = true;
         }
 
-        if (playerController != null)
-        {
-            playerController.enabled = true;
-        }
+        if (playerController != null) playerController.enabled = true;
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
 
-
     public void BreakTerminal()
     {
-        isBroken = true;
-        Debug.Log($"Terminal {gameObject.name} has broken!");
-        UpdateVisuals();
+        Debug.Log($"[Terminal] Breaking terminal: {gameObject.name}");
 
-        // ADD THIS:
-        if (MinimapManager.Instance != null)
+        isBroken = true;
+
+        // Play break particle effect - SYNTY COMPATIBLE
+        if (breakParticleEffect != null)
         {
-            MinimapManager.Instance.UpdateTerminalIcon(this);
+            Debug.Log("[Terminal] Playing break particles");
+
+            // Get the particle system on the assigned GameObject
+            ParticleSystem mainPS = breakParticleEffect.GetComponent<ParticleSystem>();
+            if (mainPS != null)
+            {
+                Debug.Log($"[Terminal] Playing main particle: {mainPS.gameObject.name}");
+                mainPS.Play();
+            }
+
         }
+        else
+        {
+            Debug.LogWarning("[Terminal] No break particle effect assigned!");
+        }
+
+        // Play break sound
+        if (audioSource != null && breakSound != null)
+        {
+            Debug.Log("[Terminal] Playing break sound");
+            audioSource.PlayOneShot(breakSound);
+        }
+        else if (breakSound == null)
+        {
+            Debug.LogWarning("[Terminal] No break sound assigned!");
+        }
+
+        UpdateVisuals();
+        if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateTerminalIcon(this);
     }
 
     public void ResetTerminal()
@@ -307,69 +329,48 @@ public class Terminal : MonoBehaviour
         targetSequence.Clear();
         HideUI();
         UpdateVisuals();
-
-        // ADD THIS:
-        if (MinimapManager.Instance != null)
-        {
-            MinimapManager.Instance.UpdateTerminalIcon(this);
-        }
+        if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateTerminalIcon(this);
     }
 
     void UpdateVisuals()
     {
-
-        if (terminalLight != null)
-        {
-            terminalLight.color = isBroken ? Color.red : Color.green;
-        }
-
+        if (terminalLight != null) terminalLight.color = isBroken ? Color.red : Color.green;
 
         if (sphereRenderer != null)
         {
-            if (isBroken && brokenMaterial != null)
-            {
-                sphereRenderer.material = brokenMaterial;
-            }
-            else if (!isBroken && workingMaterial != null)
-            {
-                sphereRenderer.material = workingMaterial;
-            }
+            if (isBroken && brokenMaterial != null) sphereRenderer.material = brokenMaterial;
+            else if (!isBroken && workingMaterial != null) sphereRenderer.material = workingMaterial;
         }
     }
 
     void ShowUI()
     {
-        if (minigameUI != null)
-        {
-            minigameUI.SetActive(true);
-        }
-
-        if (sequenceText != null)
-        {
-            sequenceText.enabled = true;
-        }
-
-        if (feedbackText != null)
-        {
-            feedbackText.enabled = true;
-        }
+        if (minigameUI != null) minigameUI.SetActive(true);
+        if (sequenceText != null) sequenceText.enabled = true;
+        if (feedbackText != null) feedbackText.enabled = true;
     }
 
     void HideUI()
     {
-        if (minigameUI != null)
+        if (minigameUI != null) minigameUI.SetActive(false);
+        if (sequenceText != null) sequenceText.enabled = false;
+        if (feedbackText != null) feedbackText.enabled = false;
+    }
+
+
+    bool IsRepairToolEquipped()
+    {
+        if (weaponSwitcher == null) return false;
+
+        WeaponBase currentWeapon = weaponSwitcher.GetCurrentWeapon();
+
+        if (currentWeapon == null) return false;
+
+        if (currentWeapon is RepairToolWeapon)
         {
-            minigameUI.SetActive(false);
+            return true;
         }
 
-        if (sequenceText != null)
-        {
-            sequenceText.enabled = false;
-        }
-
-        if (feedbackText != null)
-        {
-            feedbackText.enabled = false;
-        }
+        return false;
     }
 }

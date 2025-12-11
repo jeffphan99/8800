@@ -4,11 +4,11 @@ public class RoomLight : MonoBehaviour
 {
     [Header("Light Components")]
     public Light lightSource;
-    public Renderer lightBulbVisual; // Optional: visible bulb mesh
+    public Renderer lightBulbVisual;
 
     [Header("Light Settings")]
     public bool startsOn = true;
-    public bool canBeToggled = true;
+    public bool canBeToggled = true; 
     public bool canBeBroken = true;
 
     [Header("State")]
@@ -30,14 +30,43 @@ public class RoomLight : MonoBehaviour
 
     void Start()
     {
+
+        if (lightSource == null)
+        {
+ 
+            Transform namedChild = transform.Find("PointLight");
+            if (namedChild == null) namedChild = transform.Find("pointlight");
+
+            if (namedChild != null)
+            {
+                lightSource = namedChild.GetComponent<Light>();
+            }
+
+   
+            if (lightSource == null)
+            {
+                lightSource = GetComponentInChildren<Light>();
+            }
+        }
+
+        if (lightSource == null)
+        {
+            Debug.LogError($"[RoomLight] CRITICAL: No Light component found on {gameObject.name} or its children!");
+        }
+        else
+        {
+ 
+            if (lightSource.lightmapBakeType == LightmapBakeType.Baked)
+            {
+                Debug.LogWarning($"[RoomLight] WARNING: Light '{lightSource.gameObject.name}' is set to BAKED! It will not turn off in game. Change it to Realtime or Mixed.");
+            }
+        }
+
         SetupAudioSource();
         StoreOriginalSettings();
         InitializeState();
 
-        if (sparksEffect != null)
-        {
-            sparksEffect.Stop();
-        }
+        if (sparksEffect != null) sparksEffect.Stop();
     }
 
     void SetupAudioSource()
@@ -47,8 +76,7 @@ public class RoomLight : MonoBehaviour
         {
             audioSource = gameObject.AddComponent<AudioSource>();
             audioSource.playOnAwake = false;
-            audioSource.spatialBlend = 1f; // 3D sound
-            audioSource.maxDistance = 20f;
+            audioSource.spatialBlend = 1f;
         }
     }
 
@@ -59,11 +87,7 @@ public class RoomLight : MonoBehaviour
             originalIntensity = lightSource.intensity;
             originalColor = lightSource.color;
         }
-
-        if (lightBulbVisual != null)
-        {
-            bulbMaterial = lightBulbVisual.material;
-        }
+        if (lightBulbVisual != null) bulbMaterial = lightBulbVisual.material;
     }
 
     void InitializeState()
@@ -75,15 +99,21 @@ public class RoomLight : MonoBehaviour
 
     public void TurnOn()
     {
-        if (isBroken || !canBeToggled) return;
+        // Debugging why it might fail
+        if (isBroken)
+        {
+            Debug.Log($"[RoomLight] Cannot turn on {gameObject.name}: It is BROKEN.");
+            return;
+        }
+        if (!canBeToggled)
+        {
+            Debug.Log($"[RoomLight] Cannot turn on {gameObject.name}: 'Can Be Toggled' is FALSE.");
+            return;
+        }
 
         isOn = true;
         UpdateLightState();
-
-        if (toggleSound != null && audioSource != null)
-        {
-            audioSource.PlayOneShot(toggleSound, 0.2f);
-        }
+        PlaySound(toggleSound, 0.2f);
     }
 
     public void TurnOff()
@@ -92,19 +122,13 @@ public class RoomLight : MonoBehaviour
 
         isOn = false;
         UpdateLightState();
-
-        if (toggleSound != null && audioSource != null)
-        {
-            audioSource.PlayOneShot(toggleSound, 0.2f);
-        }
+        PlaySound(toggleSound, 0.2f);
     }
 
     public void Toggle()
     {
-        if (isOn)
-            TurnOff();
-        else
-            TurnOn();
+        if (isOn) TurnOff();
+        else TurnOn();
     }
 
     public void BreakLight()
@@ -114,39 +138,27 @@ public class RoomLight : MonoBehaviour
         isBroken = true;
         isOn = false;
         UpdateLightState();
+        PlaySound(breakSound, 0.6f);
 
-        // Play break sound
-        if (breakSound != null && audioSource != null)
-        {
-            audioSource.PlayOneShot(breakSound, 0.6f);
-        }
-
-        // Trigger sparks
         if (sparksEffect != null)
         {
             sparksEffect.Play();
             Invoke(nameof(StopSparks), sparksDuration);
         }
-
-        Debug.Log($"{gameObject.name} light broken by monster!");
+        Debug.Log($"{gameObject.name} light broken!");
     }
 
     void StopSparks()
     {
-        if (sparksEffect != null)
-        {
-            sparksEffect.Stop();
-        }
+        if (sparksEffect != null) sparksEffect.Stop();
     }
 
     public void RepairLight()
     {
         if (!isBroken) return;
-
         isBroken = false;
         isOn = true;
         UpdateLightState();
-
         Debug.Log($"{gameObject.name} light repaired");
     }
 
@@ -154,22 +166,16 @@ public class RoomLight : MonoBehaviour
     {
         if (lightSource != null)
         {
-            if (isBroken)
-            {
-                lightSource.enabled = false;
-            }
-            else
-            {
-                lightSource.enabled = isOn;
+      
+            lightSource.enabled = !isBroken && isOn;
 
-                if (isOn)
-                {
-                    lightSource.intensity = originalIntensity;
-                    lightSource.color = originalColor;
-                }
+            // Restore intensity if on
+            if (lightSource.enabled)
+            {
+                lightSource.intensity = originalIntensity;
+                lightSource.color = originalColor;
             }
         }
-
         UpdateBulbVisual();
     }
 
@@ -179,41 +185,41 @@ public class RoomLight : MonoBehaviour
 
         if (isBroken)
         {
-            // Broken - no emission
-            if (bulbMaterial.HasProperty("_EmissionColor"))
-            {
-                bulbMaterial.SetColor("_EmissionColor", Color.black);
-            }
-            bulbMaterial.color = new Color(0.3f, 0.3f, 0.3f); // Dark gray
+            SetEmission(Color.black, new Color(0.3f, 0.3f, 0.3f));
         }
         else if (isOn)
         {
-            // On - bright emission
-            if (bulbMaterial.HasProperty("_EmissionColor"))
-            {
-                bulbMaterial.SetColor("_EmissionColor", originalColor * 2f);
-                bulbMaterial.EnableKeyword("_EMISSION");
-            }
-            bulbMaterial.color = originalColor;
+            SetEmission(originalColor * 2f, originalColor);
         }
         else
         {
-            // Off - no emission
-            if (bulbMaterial.HasProperty("_EmissionColor"))
-            {
-                bulbMaterial.SetColor("_EmissionColor", Color.black);
-            }
-            bulbMaterial.color = new Color(0.5f, 0.5f, 0.5f); // Gray
+            SetEmission(Color.black, new Color(0.5f, 0.5f, 0.5f));
         }
+    }
+
+    void SetEmission(Color emitColor, Color albedoColor)
+    {
+        if (bulbMaterial.HasProperty("_EmissionColor"))
+        {
+            bulbMaterial.SetColor("_EmissionColor", emitColor);
+            if (emitColor == Color.black) bulbMaterial.DisableKeyword("_EMISSION");
+            else bulbMaterial.EnableKeyword("_EMISSION");
+        }
+        bulbMaterial.color = albedoColor;
+    }
+
+    void PlaySound(AudioClip clip, float vol)
+    {
+        if (clip != null && audioSource != null) audioSource.PlayOneShot(clip, vol);
     }
 
     void OnDrawGizmosSelected()
     {
-        Light light = lightSource != null ? lightSource : GetComponent<Light>();
+        Light light = lightSource != null ? lightSource : GetComponentInChildren<Light>();
         if (light != null)
         {
             Gizmos.color = isOn ? Color.yellow : Color.gray;
-            Gizmos.DrawWireSphere(transform.position, light.range);
+            Gizmos.DrawWireSphere(light.transform.position, light.range);
         }
     }
 }

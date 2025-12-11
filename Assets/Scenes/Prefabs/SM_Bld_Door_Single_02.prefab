@@ -263,6 +263,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   interactionPrompt: Press E to interact
   interactionRange: 20
+  interactionUI: {fileID: 0}
+  promptText: {fileID: 0}
   onInteract:
     m_PersistentCalls:
       m_Calls:

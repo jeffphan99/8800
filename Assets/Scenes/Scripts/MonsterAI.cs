@@ -12,6 +12,15 @@ public class MonsterAI : MonoBehaviour
     public float attackDamage = 50f;
     public float attackCooldown = 1f;
 
+    [Header("Visual Indicators")]
+    [Tooltip("Object to toggle when monster hears noise (e.g., Yellow Sphere)")]
+    public GameObject noiseIndicator;
+    [Tooltip("Object to toggle when monster is slowed by light (e.g., White Sphere)")]
+    public GameObject lightEffectIndicator;
+
+    // CHANGED: We use a small buffer time instead of a long duration
+    private float noiseIndicatorTimer = 0f;
+
     [Header("Patrol Settings")]
     public float patrolSpeed = 2f;
     public float chaseSpeed = 4f;
@@ -29,17 +38,14 @@ public class MonsterAI : MonoBehaviour
     [Header("Spawn Settings")]
     public Transform spawnPoint;
 
+    [Header("Debug")]
+    public bool debugToggleActive = false;
+
     [Header("Audio")]
-    [Tooltip("Footstep audio clip")]
     public AudioClip footstepSound;
-    [Tooltip("Sound played when monster wakes up")]
     public AudioClip wakeUpSound;
-    [Tooltip("Volume of footstep sounds")]
-    [Range(0f, 1f)]
-    public float footstepVolume = 0.5f;
-    [Tooltip("Volume of wake up sound")]
-    [Range(0f, 1f)]
-    public float wakeUpVolume = 0.8f;
+    [Range(0f, 1f)] public float footstepVolume = 0.5f;
+    [Range(0f, 1f)] public float wakeUpVolume = 0.8f;
 
     [Header("Light Breaking")]
     public float lightBreakRadius = 4f;
@@ -76,13 +82,11 @@ public class MonsterAI : MonoBehaviour
         {
             originalPosition = transform.position;
             originalRotation = transform.rotation;
-            Debug.LogWarning($"[Monster] {gameObject.name} has no spawn point assigned");
         }
         else
         {
             originalPosition = spawnPoint.position;
             originalRotation = spawnPoint.rotation;
-            Debug.Log($"[Monster] {gameObject.name} spawn point set at position: {originalPosition}");
         }
 
         SetupAudio();
@@ -118,21 +122,28 @@ public class MonsterAI : MonoBehaviour
             player = playerObj.transform;
         }
 
-        if (spawnPoint == null)
-        {
-            spawnPoint = transform;
-        }
-
+        if (spawnPoint == null) spawnPoint = transform;
         originalPosition = spawnPoint.position;
         originalRotation = spawnPoint.rotation;
 
         animator = GetComponent<Animator>();
 
+        if (noiseIndicator != null) noiseIndicator.SetActive(false);
+        if (lightEffectIndicator != null) lightEffectIndicator.SetActive(false);
+
         DeactivateMonster();
     }
 
+    // --- FIXED UPDATE METHOD ---
     protected virtual void Update()
     {
+        // Debug Toggle Logic (Fixed syntax)
+        if (debugToggleActive != isActive)
+        {
+            if (debugToggleActive) ActivateMonster();
+            else DeactivateMonster();
+        }
+
         if (isAsleep || !isActive)
         {
             StopFootsteps();
@@ -151,6 +162,18 @@ public class MonsterAI : MonoBehaviour
 
         // Handle flashlight effect
         UpdateFlashlightEffect();
+
+        // --- NEW: Handle Noise Indicator Timer ---
+        if (noiseIndicatorTimer > 0)
+        {
+            noiseIndicatorTimer -= Time.deltaTime;
+            if (noiseIndicator != null) noiseIndicator.SetActive(true);
+        }
+        else
+        {
+            if (noiseIndicator != null) noiseIndicator.SetActive(false);
+        }
+        // ----------------------------------------
 
         float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
@@ -177,13 +200,13 @@ public class MonsterAI : MonoBehaviour
 
             case AIState.Chasing:
                 ChasePlayer();
-
                 if (distanceToPlayer <= attackRange)
                 {
                     EnterAttackState();
                 }
                 else if (distanceToPlayer > detectionRange * 2f && !HasReachedDestination())
                 {
+                    // Keep chasing
                 }
                 else if (distanceToPlayer > detectionRange * 2f && HasReachedDestination())
                 {
@@ -209,7 +232,6 @@ public class MonsterAI : MonoBehaviour
 
     protected virtual bool DetectPlayer()
     {
-        // Default detection: simple distance check
         float distanceToPlayer = Vector3.Distance(transform.position, player.position);
         return distanceToPlayer <= detectionRange;
     }
@@ -253,7 +275,6 @@ public class MonsterAI : MonoBehaviour
                     closestNoisePosition = noise.transform.position;
                 }
             }
-
             OnNoiseDetected(closestNoisePosition);
         }
     }
@@ -262,10 +283,7 @@ public class MonsterAI : MonoBehaviour
     {
         if (!agent.hasPath || HasReachedDestination())
         {
-            if (!isWaiting)
-            {
-                StartCoroutine(WaitAtDestination());
-            }
+            if (!isWaiting) StartCoroutine(WaitAtDestination());
         }
     }
 
@@ -273,10 +291,7 @@ public class MonsterAI : MonoBehaviour
     {
         if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
         {
-            if (!agent.hasPath || agent.velocity.sqrMagnitude == 0f)
-            {
-                return true;
-            }
+            if (!agent.hasPath || agent.velocity.sqrMagnitude == 0f) return true;
         }
         return false;
     }
@@ -302,13 +317,11 @@ public class MonsterAI : MonoBehaviour
     {
         Vector3 randomDirection = Random.insideUnitSphere * radius;
         randomDirection += center;
-
         NavMeshHit hit;
         if (NavMesh.SamplePosition(randomDirection, out hit, radius, NavMesh.AllAreas))
         {
             return hit.position;
         }
-
         return Vector3.zero;
     }
 
@@ -327,38 +340,23 @@ public class MonsterAI : MonoBehaviour
 
     protected void UpdateFootsteps()
     {
-        if (agent.velocity.magnitude > 0.1f && currentState != AIState.Attacking)
-        {
-            PlayFootsteps();
-        }
-        else
-        {
-            StopFootsteps();
-        }
+        if (agent.velocity.magnitude > 0.1f && currentState != AIState.Attacking) PlayFootsteps();
+        else StopFootsteps();
     }
 
     protected void UpdateAnimator()
     {
-        if (animator != null)
-        {
-            animator.SetBool("Run", agent.velocity.magnitude > 0.1f);
-        }
+        if (animator != null) animator.SetBool("Run", agent.velocity.magnitude > 0.1f);
     }
 
     void PlayFootsteps()
     {
-        if (footstepSound != null && !footstepAudioSource.isPlaying)
-        {
-            footstepAudioSource.Play();
-        }
+        if (footstepSound != null && !footstepAudioSource.isPlaying) footstepAudioSource.Play();
     }
 
     void StopFootsteps()
     {
-        if (footstepAudioSource.isPlaying)
-        {
-            footstepAudioSource.Stop();
-        }
+        if (footstepAudioSource.isPlaying) footstepAudioSource.Stop();
     }
 
     void TryAttack()
@@ -373,7 +371,6 @@ public class MonsterAI : MonoBehaviour
     void Attack()
     {
         Debug.Log("Monster attacks player");
-
         StopFootsteps();
 
         if (player != null)
@@ -383,46 +380,26 @@ public class MonsterAI : MonoBehaviour
             transform.rotation = Quaternion.LookRotation(lookPos);
         }
 
-        if (animator != null)
-        {
-            animator.SetTrigger("Attack");
-        }
+        if (animator != null) animator.SetTrigger("Attack");
 
         PlayerHealth playerHealth = player.GetComponent<PlayerHealth>();
-        if (playerHealth != null)
-        {
-            playerHealth.TakeDamage(attackDamage);
-        }
-        else
-        {
-            if (GameManager.Instance != null)
-            {
-                GameManager.Instance.OnPlayerDeath();
-            }
-        }
+        if (playerHealth != null) playerHealth.TakeDamage(attackDamage);
+        else if (GameManager.Instance != null) GameManager.Instance.OnPlayerDeath();
     }
 
     public void Sleep(float duration)
     {
-        if (!isAsleep && isActive)
-        {
-            StartCoroutine(SleepCoroutine(duration));
-        }
+        if (!isAsleep && isActive) StartCoroutine(SleepCoroutine(duration));
     }
 
     IEnumerator SleepCoroutine(float duration)
     {
-        Debug.Log("Monster is going to sleep");
         isAsleep = true;
         currentState = AIState.Idle;
-
         agent.isStopped = true;
         StopFootsteps();
 
-        if (animator != null)
-        {
-            animator.SetTrigger("Sleep");
-        }
+        if (animator != null) animator.SetTrigger("Sleep");
 
         Quaternion sleepRotation = Quaternion.Euler(90f, transform.eulerAngles.y, transform.eulerAngles.z);
         float elapsed = 0f;
@@ -435,19 +412,15 @@ public class MonsterAI : MonoBehaviour
         }
 
         transform.rotation = sleepRotation;
-        Debug.Log("Monster is asleep");
+
+        if (noiseIndicator != null) noiseIndicator.SetActive(false);
+        if (lightEffectIndicator != null) lightEffectIndicator.SetActive(false);
 
         yield return new WaitForSeconds(duration);
 
-        Debug.Log("Monster is waking up");
-
-        if (wakeUpSound != null)
-        {
-            effectAudioSource.PlayOneShot(wakeUpSound, wakeUpVolume);
-        }
+        if (wakeUpSound != null) effectAudioSource.PlayOneShot(wakeUpSound, wakeUpVolume);
 
         elapsed = 0f;
-
         while (elapsed < sleepLayDownSpeed)
         {
             transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(0, transform.eulerAngles.y, 0), elapsed / sleepLayDownSpeed);
@@ -459,12 +432,8 @@ public class MonsterAI : MonoBehaviour
         isAsleep = false;
         agent.isStopped = false;
         EnterPatrolState();
-        Debug.Log("Monster is awake!");
 
-        if (animator != null)
-        {
-            animator.SetTrigger("WakeUp");
-        }
+        if (animator != null) animator.SetTrigger("WakeUp");
     }
 
     public void ActivateMonster()
@@ -484,12 +453,7 @@ public class MonsterAI : MonoBehaviour
         }
 
         EnterPatrolState();
-        Debug.Log($"Monster has been activated!");
-
-        if (MinimapManager.Instance != null)
-        {
-            MinimapManager.Instance.UpdateMonsterIcon(this, true);
-        }
+        if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateMonsterIcon(this, true);
     }
 
     public void DeactivateMonster()
@@ -498,18 +462,13 @@ public class MonsterAI : MonoBehaviour
         isAsleep = false;
         currentState = AIState.Idle;
 
-        if (agent != null)
-        {
-            agent.isStopped = true;
-        }
+        if (agent != null) agent.isStopped = true;
 
         StopFootsteps();
-        Debug.Log($"Monster has been deactivated");
+        if (noiseIndicator != null) noiseIndicator.SetActive(false);
+        if (lightEffectIndicator != null) lightEffectIndicator.SetActive(false);
 
-        if (MinimapManager.Instance != null)
-        {
-            MinimapManager.Instance.UpdateMonsterIcon(this, false);
-        }
+        if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateMonsterIcon(this, false);
     }
 
     public void ResetMonster()
@@ -529,14 +488,13 @@ public class MonsterAI : MonoBehaviour
         }
 
         StopFootsteps();
-
-        Debug.Log($"Monster has been reset");
+        if (noiseIndicator != null) noiseIndicator.SetActive(false);
+        if (lightEffectIndicator != null) lightEffectIndicator.SetActive(false);
     }
 
     void CheckForLightsToBreak()
     {
         Collider[] nearbyColliders = Physics.OverlapSphere(transform.position, lightBreakRadius);
-
         foreach (Collider col in nearbyColliders)
         {
             RoomLight light = col.GetComponent<RoomLight>();
@@ -550,6 +508,11 @@ public class MonsterAI : MonoBehaviour
     void UpdateFlashlightEffect()
     {
         if (!affectedByFlashlight) return;
+
+        if (lightEffectIndicator != null)
+        {
+            lightEffectIndicator.SetActive(isFlashlightShining);
+        }
 
         if (flashlightEffectTimer > 0)
         {
@@ -594,6 +557,8 @@ public class MonsterAI : MonoBehaviour
             currentState = AIState.Chasing;
             agent.speed = chaseSpeed;
             Debug.Log($"Monster investigating noise at {noisePosition}");
+
+            noiseIndicatorTimer = 0.2f;
         }
     }
 

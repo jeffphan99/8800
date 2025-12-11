@@ -79,7 +79,7 @@ public class FlashlightWeapon : WeaponBase
         if (isOn && !batteryEmpty)
         {
             DrainBattery();
-/*            CheckForMonsters();*/
+            CheckForMonsters();
         }
         else if (!isOn && currentBattery < maxBattery)
         {
@@ -128,8 +128,7 @@ public class FlashlightWeapon : WeaponBase
 
     public override void SecondaryAction()
     {
-        // Secondary action could be a focused beam or brightness toggle
-        // For now, not implemented
+ 
     }
 
     void DrainBattery()
@@ -175,7 +174,7 @@ public class FlashlightWeapon : WeaponBase
         }
     }
 
-/*    void CheckForMonsters()
+    void CheckForMonsters()
     {
         if (playerCamera == null) return;
 
@@ -194,7 +193,7 @@ public class FlashlightWeapon : WeaponBase
                 Debug.DrawRay(ray.origin, ray.direction * hit.distance, Color.yellow);
             }
         }
-    }*/
+    }
 
     void UpdateBatteryIndicator()
     {

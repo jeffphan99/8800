@@ -225,67 +225,68 @@ public class GameManager : MonoBehaviour
     void TerminalRepairFailed()
     {
         Debug.Log("=== TERMINAL REPAIR FAILED! ===");
-        Debug.Log($"[GameManager] Total monsters in list: {allMonsters.Count}");
-        Debug.Log($"[GameManager] Total doors in list: {allDoors.Count}");
 
         terminalNeedsRepair = false;
+        MonsterAI activeMonster = null;
 
-        // Activate a random monster - WITH NULL CHECKS
+        // 1. Activate a random monster
         if (allMonsters.Count > 0)
         {
-            // Filter out null monsters first
             List<MonsterAI> validMonsters = new List<MonsterAI>();
             foreach (MonsterAI m in allMonsters)
             {
-                if (m != null)
-                {
-                    validMonsters.Add(m);
-                }
+                if (m != null) validMonsters.Add(m);
             }
-
-            Debug.Log($"[GameManager] Valid monsters: {validMonsters.Count}");
 
             if (validMonsters.Count > 0)
             {
                 int randomIndex = Random.Range(0, validMonsters.Count);
-                MonsterAI randomMonster = validMonsters[randomIndex];
-
-                Debug.Log($"[GameManager] Selected monster: {randomMonster.gameObject.name}");
-                Debug.Log($"[GameManager] Monster type: {randomMonster.GetType().Name}");
-                Debug.Log($"[GameManager] Calling ActivateMonster()...");
-
-                randomMonster.ActivateMonster();
-
-                Debug.Log($"[GameManager] Monster isActive: {randomMonster.isActive}");
+                activeMonster = validMonsters[randomIndex];
+                activeMonster.ActivateMonster();
+                Debug.Log($"[GameManager] RELEASED MONSTER: {activeMonster.gameObject.name}");
             }
-            else
+        }
+
+        if (activeMonster != null && allDoors.Count > 0)
+        {
+            allDoors.Sort((a, b) => {
+                if (a == null || b == null) return 0;
+                float distA = Vector3.Distance(activeMonster.transform.position, a.transform.position);
+                float distB = Vector3.Distance(activeMonster.transform.position, b.transform.position);
+                return distA.CompareTo(distB);
+            });
+
+            // Loop through the first 2 doors in the sorted list (closest ones)
+            int doorsToOpen = Mathf.Min(2, allDoors.Count);
+            Debug.Log($"[GameManager] Breaching closest {doorsToOpen} doors near monster...");
+
+            for (int i = 0; i < doorsToOpen; i++)
             {
-                Debug.LogError("[GameManager] All monsters in list are null!");
+                Door door = allDoors[i];
+                if (door != null)
+                {
+                    if (!door.isOpen)
+                    {
+                        door.ToggleDoor(); // Or door.OpenDoor() if you prefer
+                        Debug.Log($"[GameManager]   > BREACHED DOOR: {door.name}");
+                    }
+                    else
+                    {
+                        Debug.Log($"[GameManager]   > Door {door.name} was already open.");
+                    }
+                }
             }
         }
         else
         {
-            Debug.LogError("[GameManager] NO MONSTERS IN LIST!");
+            // Fallback if no monster was found (open closest to player instead?)
+            Debug.LogWarning("[GameManager] No active monster to calculate door distance from!");
         }
 
-        // Open all doors - WITH NULL CHECK
-        Debug.Log("[GameManager] Opening all doors...");
-        foreach (Door door in allDoors)
-        {
-            if (door != null)
-            {
-                Debug.Log($"[GameManager]   Door: {door.gameObject.name}, isOpen: {door.isOpen}");
-                if (!door.isOpen)
-                {
-                    door.ToggleDoor();
-                    Debug.Log($"[GameManager]   Toggled door: {door.gameObject.name}");
-                }
-            }
-        }
-
+        // UI Updates
         if (terminalWarningText != null)
         {
-            terminalWarningText.text = "⚠ CONTAINMENT BREACH! MONSTER RELEASED!";
+            terminalWarningText.text = "⚠ CONTAINMENT BREACH! SECTOR UNLOCKED!";
             terminalWarningText.color = Color.red;
         }
 
@@ -296,7 +297,6 @@ public class GameManager : MonoBehaviour
         }
 
         nextTerminalBreakTime = Time.time + terminalBreakInterval;
-
         Debug.Log("=== TERMINAL REPAIR FAILED - COMPLETE ===");
     }
 

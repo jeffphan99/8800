@@ -12,10 +12,10 @@ public class LightSwitch : MonoBehaviour
     [Header("Auto-Find Lights")]
     public bool autoFindLightsOnStart = true;
     public float lightDetectionRadius = 20f;
-    public LayerMask lightLayer; // Optional: only find lights on specific layer
+    public LayerMask lightLayer; 
 
     [Header("Switch Visual")]
-    public GameObject switchLever; // The physical switch model
+    public GameObject switchLever;
     public Vector3 onRotation = new Vector3(-30, 0, 0);
     public Vector3 offRotation = new Vector3(30, 0, 0);
     public float switchSpeed = 8f;
@@ -36,15 +36,24 @@ public class LightSwitch : MonoBehaviour
     {
         SetupAudioSource();
 
-        if (autoFindLightsOnStart)
+ 
+        if (autoFindLightsOnStart && controlledLights.Count == 0)
         {
             FindNearbyLights();
         }
 
-        // Set initial state
-        lightsAreOn = true;
+ 
+        if (controlledLights.Count > 0 && controlledLights[0] != null)
+        {
+            lightsAreOn = controlledLights[0].isOn;
+        }
+        else
+        {
+            lightsAreOn = true;
+        }
+
         UpdateIndicator(true);
-        UpdateSwitchVisual(true); // Instant update on start
+        UpdateSwitchVisual(true);
     }
 
     void SetupAudioSource()
@@ -61,35 +70,33 @@ public class LightSwitch : MonoBehaviour
 
     void FindNearbyLights()
     {
-        controlledLights.Clear();
 
-        // Find all RoomLight components in range
         Collider[] colliders = Physics.OverlapSphere(transform.position, lightDetectionRadius);
 
         foreach (Collider col in colliders)
         {
             RoomLight light = col.GetComponent<RoomLight>();
-            if (light != null)
+            // Only add if not already in the list
+            if (light != null && !controlledLights.Contains(light))
             {
                 controlledLights.Add(light);
             }
         }
 
-        // If no colliders found, try finding by distance
         if (controlledLights.Count == 0)
         {
             RoomLight[] allLights = FindObjectsOfType<RoomLight>();
             foreach (RoomLight light in allLights)
             {
                 float distance = Vector3.Distance(transform.position, light.transform.position);
-                if (distance <= lightDetectionRadius)
+                if (distance <= lightDetectionRadius && !controlledLights.Contains(light))
                 {
                     controlledLights.Add(light);
                 }
             }
         }
 
-        Debug.Log($"[{zoneName}] LightSwitch found {controlledLights.Count} lights in radius {lightDetectionRadius}");
+        Debug.Log($"[{zoneName}] LightSwitch tracking {controlledLights.Count} lights");
     }
 
     public void Toggle()
@@ -169,7 +176,6 @@ public class LightSwitch : MonoBehaviour
         }
     }
 
-    // Public method to manually add lights
     public void AddLight(RoomLight light)
     {
         if (light != null && !controlledLights.Contains(light))
@@ -178,7 +184,6 @@ public class LightSwitch : MonoBehaviour
         }
     }
 
-    // Public method to remove lights
     public void RemoveLight(RoomLight light)
     {
         if (controlledLights.Contains(light))
@@ -189,11 +194,9 @@ public class LightSwitch : MonoBehaviour
 
     void OnDrawGizmosSelected()
     {
-        // Draw detection radius
         Gizmos.color = new Color(1f, 1f, 0f, 0.3f);
         Gizmos.DrawWireSphere(transform.position, lightDetectionRadius);
 
-        // Draw lines to controlled lights
         Gizmos.color = lightsAreOn ? Color.green : Color.red;
         foreach (RoomLight light in controlledLights)
         {
@@ -203,8 +206,6 @@ public class LightSwitch : MonoBehaviour
                 Gizmos.DrawWireSphere(light.transform.position, 1f);
             }
         }
-
-        // Draw zone label
 #if UNITY_EDITOR
         UnityEditor.Handles.Label(transform.position + Vector3.up * 2, zoneName);
 #endif

@@ -10,6 +10,13 @@ public class GlobalMaterialDarkener : MonoBehaviour
     [Range(0f, 1f)]
     public float emissionMultiplier = 0f; // Reduce glowing elements
 
+    [Header("Fog Settings")]
+    public bool enableFog = true;
+    public Color fogColor = Color.black; 
+    public FogMode fogMode = FogMode.ExponentialSquared;
+    [Range(0f, 0.5f)]
+    public float fogDensity = 0.05f; 
+
 
     [Header("Apply To")]
     public bool applyToAll = true;

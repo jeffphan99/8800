@@ -3,7 +3,7 @@ using UnityEngine;
 public class MinimapIcon : MonoBehaviour
 {
     [Header("Minimap Settings")]
-    public GameObject iconPrefab; // The icon that appears on minimap
+    public GameObject iconPrefab;
     public Color iconColor = Color.white;
     public Vector3 iconOffset = new Vector3(0, 100, 0); // Height above object
     public bool rotateWithObject = true;
@@ -41,7 +41,6 @@ public class MinimapIcon : MonoBehaviour
         }
         else
         {
-            // Create a simple quad if no prefab provided
             CreateDefaultIcon();
         }
     }
@@ -81,7 +80,7 @@ public class MinimapIcon : MonoBehaviour
         Vector3 pos = transform.position + iconOffset;
         iconInstance.transform.position = pos;
 
-        // Rotate icon to match object (like player direction)
+        // Rotate icon to match object
         if (rotateWithObject)
         {
             iconInstance.transform.rotation = Quaternion.Euler(90, transform.eulerAngles.y, 0);

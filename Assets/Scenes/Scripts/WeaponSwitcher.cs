@@ -112,5 +112,6 @@ namespace StarterAssets
         {
             return weapons[currentWeaponIndex];
         }
+
     }
 }
