@@ -86,6 +86,9 @@ namespace StarterAssets
 
         private const float _threshold = 0.01f;
 
+        // Network spawn warp: skip movement for a few frames then destroy/recreate CC
+        private int _warpFramesRemaining = -1;
+
         private bool IsCurrentDeviceMouse
         {
             get
@@ -135,8 +138,73 @@ namespace StarterAssets
             _fallTimeoutDelta = FallTimeout;
         }
 
+        /// Called by PlayerHealth.SetupOwner() after network spawn.
+        /// Skips movement for a few frames then destroys and recreates the
+        /// CharacterController so its internal physics position matches the
+        /// network-assigned transform.position (fixes falling through floor).
+        public void WarpAfterNetworkSpawn()
+        {
+            _warpFramesRemaining = 5;
+        }
+
         private void Update()
         {
+            // --- Network spawn warp sequence ---
+            if (_warpFramesRemaining > 0)
+            {
+                _warpFramesRemaining--;
+                return; // Skip all movement while waiting
+            }
+
+            if (_warpFramesRemaining == 0)
+            {
+                _warpFramesRemaining = -1;
+
+                // Force transform to the authoritative spawn position before recreating CC.
+                if (GameManager.Instance != null && GameManager.Instance.playerSpawnPoint != null)
+                {
+                    transform.position = GameManager.Instance.playerSpawnPoint.position;
+                }
+
+                // Destroy and recreate CharacterController.
+                // CC has an internal capsule position that is set at Instantiate time.
+                // NGO sets transform.position AFTER instantiation, but CC doesn't know.
+                // Creating a new CC picks up the current (correct) transform.position.
+                var oldCC = GetComponent<CharacterController>();
+                if (oldCC != null)
+                {
+                    float height = oldCC.height;
+                    float radius = oldCC.radius;
+                    Vector3 center = oldCC.center;
+                    float skinWidth = oldCC.skinWidth;
+                    float stepOffset = oldCC.stepOffset;
+                    float slopeLimit = oldCC.slopeLimit;
+                    float minMoveDistance = oldCC.minMoveDistance;
+
+                    DestroyImmediate(oldCC);
+
+                    var newCC = gameObject.AddComponent<CharacterController>();
+                    newCC.height = height;
+                    newCC.radius = radius;
+                    newCC.center = center;
+                    newCC.skinWidth = skinWidth;
+                    newCC.stepOffset = stepOffset;
+                    newCC.slopeLimit = slopeLimit;
+                    newCC.minMoveDistance = minMoveDistance;
+
+                    _controller = newCC;
+                    Debug.Log("[FPC] CharacterController recreated for network warp");
+                }
+                return; // Let the new CC settle for one frame
+            }
+
+            // Re-fetch CharacterController if it was destroyed and re-created (network spawn fix)
+            if (_controller == null)
+            {
+                _controller = GetComponent<CharacterController>();
+                if (_controller == null) return;
+            }
+
             JumpAndGravity();
             GroundedCheck();
             Move();
