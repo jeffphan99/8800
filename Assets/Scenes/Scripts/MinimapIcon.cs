@@ -5,7 +5,7 @@ public class MinimapIcon : MonoBehaviour
     [Header("Minimap Settings")]
     public GameObject iconPrefab;
     public Color iconColor = Color.white;
-    public Vector3 iconOffset = new Vector3(0, 100, 0); // Height above object
+    public Vector3 iconOffset = new Vector3(0, 40, 0); // Below minimap camera (at y=50) to avoid clipping
     public bool rotateWithObject = true;
 
     private GameObject iconInstance;

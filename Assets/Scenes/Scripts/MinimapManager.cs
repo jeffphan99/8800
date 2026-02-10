@@ -49,21 +49,13 @@ public class MinimapManager : MonoBehaviour
         if (minimapCamera == null)
         {
             minimapCamera = GetComponent<Camera>();
-            if (minimapCamera == null)
-            {
-                Debug.LogError("MinimapManager: No camera found!");
-                return;
-            }
+            // Camera may live on the player prefab — will find lazily in LateUpdate
         }
 
         // Find player if not assigned
-        if (player == null)
+        if (player == null && PlayerHealth.LocalPlayer != null)
         {
-            GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
-            if (playerObj != null)
-            {
-                player = playerObj.transform;
-            }
+            InitPlayer();
         }
 
         // Create player icon
@@ -72,17 +64,41 @@ public class MinimapManager : MonoBehaviour
             CreatePlayerIcon();
         }
 
-        // Auto-find and track objects
+        // Auto-find and track objects (terminals/monsters are scene objects, always present)
         Invoke(nameof(AutoTrackObjects), 0.1f);
     }
 
     void LateUpdate()
     {
-        if (followPlayer && player != null && minimapCamera != null)
+        // Lazy-init: player spawns after scene objects
+        if (player == null && PlayerHealth.LocalPlayer != null)
         {
-            // Make camera follow player's X and Z position
+            InitPlayer();
+            CreatePlayerIcon();
+        }
+
+        // Camera follow is not needed when MinimapCamera is a child of the player prefab.
+        // Only move manually if the camera is a standalone scene object.
+        if (followPlayer && player != null && minimapCamera != null
+            && minimapCamera.transform.parent == null)
+        {
             Vector3 newPos = player.position + cameraOffset;
             minimapCamera.transform.position = newPos;
+        }
+    }
+
+    void InitPlayer()
+    {
+        player = PlayerHealth.LocalPlayer.transform;
+
+        // The MinimapCamera is a child of the player prefab
+        if (minimapCamera == null)
+        {
+            Transform camTransform = player.Find("MinimapCamera");
+            if (camTransform != null)
+            {
+                minimapCamera = camTransform.GetComponent<Camera>();
+            }
         }
     }
 
@@ -119,7 +135,7 @@ public class MinimapManager : MonoBehaviour
         }
 
         playerIcon.transform.SetParent(player);
-        playerIcon.transform.localPosition = new Vector3(0, 50, 0);
+        playerIcon.transform.localPosition = new Vector3(0, 40, 0);
         playerIcon.layer = LayerMask.NameToLayer("Minimap");
 
         // Make all children also on minimap layer
@@ -213,7 +229,7 @@ public class MinimapManager : MonoBehaviour
 
         icon.name = target.name + "_MinimapIcon";
         icon.transform.SetParent(target);
-        icon.transform.localPosition = new Vector3(0, 50, 0); // Height above object
+        icon.transform.localPosition = new Vector3(0, 40, 0); // Below camera (at y=50) to avoid clipping
         icon.transform.rotation = Quaternion.Euler(90, 0, 0); // Face up
         icon.layer = LayerMask.NameToLayer("Minimap");
 

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(copy:*)",
+      "Bash(find:*)",
+      "Bash(ls -la \"C:\\\\Users\\\\jeff_\\\\8800\\\\Assets\\\\ExternalAssets\\\\PolygonSciFiWorlds\\\\Shaders\"\" | grep \".meta \")"
+    ]
+  }
+}

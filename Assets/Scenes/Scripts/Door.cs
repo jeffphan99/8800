@@ -1,8 +1,9 @@
 using System.Collections;
 using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 
-public class Door : MonoBehaviour
+public class Door : NetworkBehaviour
 {
     [Header("Door Settings")]
     public Transform doorTransform;
@@ -15,7 +16,13 @@ public class Door : MonoBehaviour
     public float interactDistance = 3f;
 
     private Vector3 closedPosition;
-    public bool isOpen { get; private set; }
+
+    // Networked open state
+    private NetworkVariable<bool> networkIsOpen = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    public bool isOpen => networkIsOpen.Value;
+
     private bool isMoving = false;
 
     void Start()
@@ -26,7 +33,6 @@ public class Door : MonoBehaviour
         }
 
         closedPosition = doorTransform.localPosition;
-        isOpen = startsOpen;
 
         if (startsOpen)
         {
@@ -36,21 +42,52 @@ public class Door : MonoBehaviour
         AutoSetupInteraction();
     }
 
+    public override void OnNetworkSpawn()
+    {
+        networkIsOpen.OnValueChanged += OnOpenStateChanged;
+
+        // Set initial state
+        if (IsServer)
+        {
+            networkIsOpen.Value = startsOpen;
+        }
+        else
+        {
+            // Client: snap to current state
+            ApplyDoorPosition(networkIsOpen.Value);
+        }
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        networkIsOpen.OnValueChanged -= OnOpenStateChanged;
+    }
+
+    private void OnOpenStateChanged(bool previousValue, bool newValue)
+    {
+        // Animate the door on all clients
+        if (!isMoving)
+        {
+            StartCoroutine(AnimateDoor(newValue));
+        }
+    }
+
+    private void ApplyDoorPosition(bool open)
+    {
+        if (doorTransform == null) return;
+        Vector3 targetPosition = open ? closedPosition + openPosition : closedPosition;
+        doorTransform.localPosition = targetPosition;
+    }
+
     void AutoSetupInteraction()
     {
-
         Interactable interactable = GetComponent<Interactable>();
 
         if (interactable != null)
         {
-
             interactable.interactionRange = interactDistance;
-
             interactable.onInteract.RemoveListener(ToggleDoor);
-
-
             interactable.onInteract.AddListener(ToggleDoor);
-
             Debug.Log($"[Door] Auto-wired interaction for {gameObject.name} with range {interactDistance}");
         }
         else
@@ -59,31 +96,84 @@ public class Door : MonoBehaviour
         }
     }
 
+    // Called by Interactable (player interaction) and by GameManager
     public void ToggleDoor()
     {
-        if (!isMoving)
+        if (isMoving) return;
+
+        // If not network-spawned, fall back to local toggle
+        if (!IsSpawned)
         {
-            StartCoroutine(MoveDoor(!isOpen));
+            StartCoroutine(AnimateDoor(!startsOpen));
+            return;
         }
+
+        if (IsServer)
+        {
+            // Server can toggle directly
+            networkIsOpen.Value = !networkIsOpen.Value;
+        }
+        else
+        {
+            // Client requests server to toggle
+            ToggleDoorServerRpc();
+        }
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    private void ToggleDoorServerRpc()
+    {
+        if (isMoving) return;
+        networkIsOpen.Value = !networkIsOpen.Value;
     }
 
     public void OpenDoor()
     {
-        if (!isOpen && !isMoving)
+        if (isMoving) return;
+        if (!IsSpawned) { StartCoroutine(AnimateDoor(true)); return; }
+        if (isOpen) return;
+
+        if (IsServer)
         {
-            StartCoroutine(MoveDoor(true));
+            networkIsOpen.Value = true;
         }
+        else
+        {
+            OpenDoorServerRpc();
+        }
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    private void OpenDoorServerRpc()
+    {
+        if (isOpen || isMoving) return;
+        networkIsOpen.Value = true;
     }
 
     public void CloseDoor()
     {
-        if (isOpen && !isMoving)
+        if (isMoving) return;
+        if (!IsSpawned) { StartCoroutine(AnimateDoor(false)); return; }
+        if (!isOpen) return;
+
+        if (IsServer)
         {
-            StartCoroutine(MoveDoor(false));
+            networkIsOpen.Value = false;
+        }
+        else
+        {
+            CloseDoorServerRpc();
         }
     }
 
-    IEnumerator MoveDoor(bool open)
+    [ServerRpc(RequireOwnership = false)]
+    private void CloseDoorServerRpc()
+    {
+        if (!isOpen || isMoving) return;
+        networkIsOpen.Value = false;
+    }
+
+    IEnumerator AnimateDoor(bool open)
     {
         isMoving = true;
         Vector3 targetPosition = open ? closedPosition + openPosition : closedPosition;
@@ -99,7 +189,6 @@ public class Door : MonoBehaviour
         }
 
         doorTransform.localPosition = targetPosition;
-        isOpen = open;
         isMoving = false;
     }
 }

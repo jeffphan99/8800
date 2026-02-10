@@ -30,10 +30,9 @@ public class BananaWeapon : WeaponBase
     {
         currentBananas = maxBananas;
         
-        GameObject player = GameObject.FindGameObjectWithTag("Player");
-        if (player != null)
+        if (PlayerHealth.LocalPlayer != null)
         {
-            playerHealth = player.GetComponent<PlayerHealth>();
+            playerHealth = PlayerHealth.LocalPlayer.GetComponent<PlayerHealth>();
         }
 
         if (audioSource == null)
@@ -124,6 +123,12 @@ public class BananaWeapon : WeaponBase
 
     void FinishEating()
     {
+        // Lazy-init: playerHealth may be null if Start() ran before LocalPlayer was set
+        if (playerHealth == null && PlayerHealth.LocalPlayer != null)
+        {
+            playerHealth = PlayerHealth.LocalPlayer.GetComponent<PlayerHealth>();
+        }
+
         // Heal player
         if (playerHealth != null)
         {
@@ -165,7 +170,7 @@ public class BananaWeapon : WeaponBase
 
         Debug.Log($"Prefab assigned: {bananaPeelPrefab.name}");
 
-        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        GameObject player = PlayerHealth.LocalPlayer;
         if (player == null)
         {
             Debug.LogError("Player not found!");

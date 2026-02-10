@@ -1,10 +1,11 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.UI;
 using StarterAssets;
 
-public class Terminal : MonoBehaviour
+public class Terminal : NetworkBehaviour
 {
     [Header("Minigame Settings")]
     public int sequenceLength = 8;
@@ -15,13 +16,23 @@ public class Terminal : MonoBehaviour
     private List<KeyCode> targetSequence = new List<KeyCode>();
     private int currentIndex = 0;
     public bool minigameActive = false;
-    public bool isBroken = false;
+
+    // Networked state
+    private NetworkVariable<bool> networkIsBroken = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private NetworkVariable<ulong> repairingPlayerId = new NetworkVariable<ulong>(
+        ulong.MaxValue, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    // Local shortcut
+    public bool isBroken => networkIsBroken.Value;
 
     private KeyCode[] possibleKeys = { KeyCode.W, KeyCode.A, KeyCode.S, KeyCode.D };
 
+    // Lazy-initialized per local player
     private StarterAssetsInputs playerInput;
     private FirstPersonController playerController;
-    private WeaponSwitcher weaponSwitcher; // Reference to the weapon switcher
+    private WeaponSwitcher weaponSwitcher;
+    private bool localRefsFound = false;
 
     [Header("Visual Feedback")]
     public GameObject visualSphere;
@@ -31,23 +42,13 @@ public class Terminal : MonoBehaviour
     private Renderer sphereRenderer;
 
     [Header("Break Effects")]
-    public ParticleSystem breakParticleEffect; // Sparks/smoke when terminal breaks
-    public AudioClip breakSound; // Sound when breaking
+    public ParticleSystem breakParticleEffect;
+    public AudioClip breakSound;
     public AudioSource audioSource;
 
     void Start()
     {
         Debug.Log("=== TERMINAL START ===");
-
-        playerInput = FindObjectOfType<StarterAssetsInputs>();
-        playerController = FindObjectOfType<FirstPersonController>();
-
-        // Find the weapon switcher on the player
-        GameObject player = GameObject.FindGameObjectWithTag("Player");
-        if (player != null)
-        {
-            weaponSwitcher = player.GetComponentInChildren<WeaponSwitcher>();
-        }
 
         if (visualSphere != null)
         {
@@ -67,7 +68,6 @@ public class Terminal : MonoBehaviour
         if (feedbackText == null) feedbackText = GameObject.Find("FeedbackText")?.GetComponent<Text>();
         if (minigameUI == null) minigameUI = GameObject.Find("MinigamePanel");
 
-        // Set up audio source if not assigned
         if (audioSource == null)
         {
             audioSource = GetComponent<AudioSource>();
@@ -82,8 +82,54 @@ public class Terminal : MonoBehaviour
         UpdateVisuals();
     }
 
+    public override void OnNetworkSpawn()
+    {
+        networkIsBroken.OnValueChanged += OnBrokenStateChanged;
+        // Sync visuals to current state on spawn
+        UpdateVisuals();
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        networkIsBroken.OnValueChanged -= OnBrokenStateChanged;
+    }
+
+    private void OnBrokenStateChanged(bool previousValue, bool newValue)
+    {
+        UpdateVisuals();
+
+        if (newValue)
+        {
+            // Terminal just broke — play effects on all clients
+            PlayBreakEffects();
+        }
+        else
+        {
+            // Terminal repaired — stop effects on all clients
+            StopBreakEffects();
+        }
+
+        if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateTerminalIcon(this);
+    }
+
+    private void FindLocalPlayerRefs()
+    {
+        if (localRefsFound) return;
+
+        GameObject player = PlayerHealth.LocalPlayer;
+        if (player == null) return;
+
+        playerInput = player.GetComponent<StarterAssetsInputs>();
+        playerController = player.GetComponent<FirstPersonController>();
+        weaponSwitcher = player.GetComponentInChildren<WeaponSwitcher>();
+        localRefsFound = true;
+    }
+
     public void StartMinigame()
     {
+        // Lazy-find local player references
+        FindLocalPlayerRefs();
+
         if (!isBroken)
         {
             Debug.Log("Terminal is working fine - no repair needed");
@@ -94,7 +140,6 @@ public class Terminal : MonoBehaviour
                 feedbackText.color = Color.green;
             }
             if (sequenceText != null) sequenceText.text = "";
-
             Invoke(nameof(HideUI), 2f);
             return;
         }
@@ -102,8 +147,6 @@ public class Terminal : MonoBehaviour
         if (!IsRepairToolEquipped())
         {
             Debug.Log("You need the repair tool equipped!");
-
-            // Show a warning message using your existing UI
             ShowUI();
             if (feedbackText != null)
             {
@@ -111,12 +154,77 @@ public class Terminal : MonoBehaviour
                 feedbackText.color = Color.red;
             }
             if (sequenceText != null) sequenceText.text = "";
-
-            // Hide the warning after 2 seconds
             Invoke(nameof(HideUI), 2f);
             return;
         }
 
+        // Check if another player is already repairing
+        if (repairingPlayerId.Value != ulong.MaxValue)
+        {
+            Debug.Log("Another player is already repairing this terminal!");
+            ShowUI();
+            if (feedbackText != null)
+            {
+                feedbackText.text = "Another player is repairing this terminal!";
+                feedbackText.color = Color.yellow;
+            }
+            if (sequenceText != null) sequenceText.text = "";
+            Invoke(nameof(HideUI), 2f);
+            return;
+        }
+
+        // Request repair lock from server
+        RequestRepairLockServerRpc(NetworkManager.Singleton.LocalClientId);
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    private void RequestRepairLockServerRpc(ulong clientId)
+    {
+        if (repairingPlayerId.Value != ulong.MaxValue)
+        {
+            // Already locked by someone else
+            RepairLockDeniedClientRpc(clientId);
+            return;
+        }
+
+        if (!networkIsBroken.Value)
+        {
+            // Terminal was repaired between request and server processing
+            RepairLockDeniedClientRpc(clientId);
+            return;
+        }
+
+        // Grant the lock
+        repairingPlayerId.Value = clientId;
+        RepairLockGrantedClientRpc(clientId);
+    }
+
+    [ClientRpc]
+    private void RepairLockGrantedClientRpc(ulong clientId)
+    {
+        // Only the requesting client starts the minigame
+        if (NetworkManager.Singleton.LocalClientId != clientId) return;
+
+        BeginMinigameLocal();
+    }
+
+    [ClientRpc]
+    private void RepairLockDeniedClientRpc(ulong clientId)
+    {
+        if (NetworkManager.Singleton.LocalClientId != clientId) return;
+
+        ShowUI();
+        if (feedbackText != null)
+        {
+            feedbackText.text = "Another player is repairing this terminal!";
+            feedbackText.color = Color.yellow;
+        }
+        if (sequenceText != null) sequenceText.text = "";
+        Invoke(nameof(HideUI), 2f);
+    }
+
+    private void BeginMinigameLocal()
+    {
         Debug.Log("=== START REPAIR MINIGAME ===");
 
         ShowUI();
@@ -131,7 +239,6 @@ public class Terminal : MonoBehaviour
         }
 
         Debug.Log($"Generated Sequence: {string.Join(", ", targetSequence)}");
-
         UpdateSequenceDisplay();
 
         if (feedbackText != null)
@@ -171,7 +278,6 @@ public class Terminal : MonoBehaviour
             }
         }
 
-        // ESC to cancel
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             CancelMinigame();
@@ -219,7 +325,7 @@ public class Terminal : MonoBehaviour
         for (int i = 0; i < targetSequence.Count; i++)
         {
             if (i < currentIndex)
-                display += $"<color=green>✓{KeyToString(targetSequence[i])}</color> ";
+                display += $"<color=green>\u2713{KeyToString(targetSequence[i])}</color> ";
             else if (i == currentIndex)
                 display += $"<color=yellow><b>[{KeyToString(targetSequence[i])}]</b></color> ";
             else
@@ -234,7 +340,6 @@ public class Terminal : MonoBehaviour
     void CompleteMinigame()
     {
         Debug.Log("=== TERMINAL REPAIRED! ===");
-        isBroken = false;
 
         if (feedbackText != null)
         {
@@ -242,27 +347,36 @@ public class Terminal : MonoBehaviour
             feedbackText.color = Color.green;
         }
 
+        // Tell server repair is complete
+        CompleteRepairServerRpc();
+
+        Invoke(nameof(CloseMinigame), 2f);
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    private void CompleteRepairServerRpc()
+    {
+        networkIsBroken.Value = false;
+        repairingPlayerId.Value = ulong.MaxValue;
+
         if (GameManager.Instance != null)
         {
             GameManager.Instance.OnTerminalRepaired(this);
         }
-
-        if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateTerminalIcon(this);
-
-        UpdateVisuals();
-        Invoke(nameof(CloseMinigame), 2f);
-
-        // Get the particle system on the assigned GameObject
-        ParticleSystem mainPS = breakParticleEffect.GetComponent<ParticleSystem>();
-        if (mainPS != null)
-        {
-            Debug.Log($"[Terminal] Stopping main particle: {mainPS.gameObject.name}");
-            mainPS.Stop();
-        }
-
     }
 
-    void CancelMinigame() { CloseMinigame(); }
+    void CancelMinigame()
+    {
+        CloseMinigame();
+        // Release the lock on the server
+        ReleaseRepairLockServerRpc();
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    private void ReleaseRepairLockServerRpc()
+    {
+        repairingPlayerId.Value = ulong.MaxValue;
+    }
 
     void CloseMinigame()
     {
@@ -281,65 +395,65 @@ public class Terminal : MonoBehaviour
         Cursor.visible = false;
     }
 
+    // Called by GameManager on server only
     public void BreakTerminal()
     {
+        if (!IsServer) return;
+
         Debug.Log($"[Terminal] Breaking terminal: {gameObject.name}");
+        networkIsBroken.Value = true;
+    }
 
-        isBroken = true;
+    // Called by GameManager on server only
+    public void ResetTerminal()
+    {
+        if (!IsServer) return;
 
-        // Play break particle effect - SYNTY COMPATIBLE
+        networkIsBroken.Value = false;
+        repairingPlayerId.Value = ulong.MaxValue;
+        // Local cleanup for any client running the minigame will happen via OnBrokenStateChanged
+    }
+
+    private void PlayBreakEffects()
+    {
         if (breakParticleEffect != null)
         {
-            Debug.Log("[Terminal] Playing break particles");
-
-            // Get the particle system on the assigned GameObject
             ParticleSystem mainPS = breakParticleEffect.GetComponent<ParticleSystem>();
             if (mainPS != null)
             {
-                Debug.Log($"[Terminal] Playing main particle: {mainPS.gameObject.name}");
+                Debug.Log($"[Terminal] Playing break particle: {mainPS.gameObject.name}");
                 mainPS.Play();
             }
-
-        }
-        else
-        {
-            Debug.LogWarning("[Terminal] No break particle effect assigned!");
         }
 
-        // Play break sound
         if (audioSource != null && breakSound != null)
         {
-            Debug.Log("[Terminal] Playing break sound");
             audioSource.PlayOneShot(breakSound);
         }
-        else if (breakSound == null)
-        {
-            Debug.LogWarning("[Terminal] No break sound assigned!");
-        }
-
-        UpdateVisuals();
-        if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateTerminalIcon(this);
     }
 
-    public void ResetTerminal()
+    private void StopBreakEffects()
     {
-        isBroken = false;
-        minigameActive = false;
-        currentIndex = 0;
-        targetSequence.Clear();
-        HideUI();
-        UpdateVisuals();
-        if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateTerminalIcon(this);
+        if (breakParticleEffect != null)
+        {
+            ParticleSystem mainPS = breakParticleEffect.GetComponent<ParticleSystem>();
+            if (mainPS != null)
+            {
+                mainPS.Stop();
+            }
+        }
     }
 
     void UpdateVisuals()
     {
-        if (terminalLight != null) terminalLight.color = isBroken ? Color.red : Color.green;
+        bool broken = IsSpawned ? networkIsBroken.Value : false;
+
+        if (terminalLight != null) terminalLight.color = broken ? Color.red : Color.green;
 
         if (sphereRenderer != null)
         {
-            if (isBroken && brokenMaterial != null) sphereRenderer.material = brokenMaterial;
-            else if (!isBroken && workingMaterial != null) sphereRenderer.material = workingMaterial;
+            if (broken && brokenMaterial != null) sphereRenderer.material = brokenMaterial;
+            else if (!broken && workingMaterial != null) sphereRenderer.material = workingMaterial;
         }
     }
 
@@ -357,20 +471,11 @@ public class Terminal : MonoBehaviour
         if (feedbackText != null) feedbackText.enabled = false;
     }
 
-
     bool IsRepairToolEquipped()
     {
         if (weaponSwitcher == null) return false;
-
         WeaponBase currentWeapon = weaponSwitcher.GetCurrentWeapon();
-
         if (currentWeapon == null) return false;
-
-        if (currentWeapon is RepairToolWeapon)
-        {
-            return true;
-        }
-
-        return false;
+        return currentWeapon is RepairToolWeapon;
     }
 }

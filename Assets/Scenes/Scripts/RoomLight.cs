@@ -56,10 +56,12 @@ public class RoomLight : MonoBehaviour
         else
         {
  
+#if UNITY_EDITOR
             if (lightSource.lightmapBakeType == LightmapBakeType.Baked)
             {
                 Debug.LogWarning($"[RoomLight] WARNING: Light '{lightSource.gameObject.name}' is set to BAKED! It will not turn off in game. Change it to Realtime or Mixed.");
             }
+#endif
         }
 
         SetupAudioSource();

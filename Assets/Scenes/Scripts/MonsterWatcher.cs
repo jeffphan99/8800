@@ -14,6 +14,9 @@ public class MonsterWatcher : MonsterAI
 
     protected override void Update()
     {
+        // Only server runs AI logic
+        if (!IsServer) return;
+
         if (Time.time >= lastFlashlightCheckTime + flashlightCheckInterval)
         {
             CheckIfBeingWatched();

@@ -1,10 +1,11 @@
 using System.Collections;
 using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.AI;
 
 [RequireComponent(typeof(NavMeshAgent))]
-public class MonsterAI : MonoBehaviour
+public class MonsterAI : NetworkBehaviour
 {
     [Header("Monster Settings")]
     public float detectionRange = 10f;
@@ -18,7 +19,6 @@ public class MonsterAI : MonoBehaviour
     [Tooltip("Object to toggle when monster is slowed by light (e.g., White Sphere)")]
     public GameObject lightEffectIndicator;
 
-    // CHANGED: We use a small buffer time instead of a long duration
     private float noiseIndicatorTimer = 0f;
 
     [Header("Patrol Settings")]
@@ -62,7 +62,13 @@ public class MonsterAI : MonoBehaviour
     protected Transform player;
     protected float lastAttackTime;
     protected bool isAsleep = false;
-    public bool isActive { get; protected set; }
+
+    // Networked active state — clients use this to show/hide the monster
+    private NetworkVariable<bool> networkIsActive = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    public bool isActive => networkIsActive.Value;
+
     protected Vector3 originalPosition;
     protected Quaternion originalRotation;
     protected Animator animator;
@@ -75,6 +81,10 @@ public class MonsterAI : MonoBehaviour
 
     protected AudioSource footstepAudioSource;
     protected AudioSource effectAudioSource;
+
+    // Cached renderers for show/hide (instead of SetActive)
+    private Renderer[] cachedRenderers;
+    private Collider[] cachedColliders;
 
     void Awake()
     {
@@ -90,6 +100,10 @@ public class MonsterAI : MonoBehaviour
         }
 
         SetupAudio();
+
+        // Cache renderers and colliders for show/hide
+        cachedRenderers = GetComponentsInChildren<Renderer>();
+        cachedColliders = GetComponentsInChildren<Collider>();
     }
 
     void SetupAudio()
@@ -110,17 +124,11 @@ public class MonsterAI : MonoBehaviour
         effectAudioSource.maxDistance = 25f;
     }
 
-    void Start()
+    void OnStartServer()
     {
         agent = GetComponent<NavMeshAgent>();
         agent.speed = patrolSpeed;
         agent.stoppingDistance = attackRange * 0.8f;
-
-        GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
-        if (playerObj != null)
-        {
-            player = playerObj.transform;
-        }
 
         if (spawnPoint == null) spawnPoint = transform;
         originalPosition = spawnPoint.position;
@@ -131,13 +139,109 @@ public class MonsterAI : MonoBehaviour
         if (noiseIndicator != null) noiseIndicator.SetActive(false);
         if (lightEffectIndicator != null) lightEffectIndicator.SetActive(false);
 
-        DeactivateMonster();
+        // Clients don't run NavMeshAgent
+        if (!IsServer)
+        {
+            agent.enabled = false;
+        }
     }
 
-    // --- FIXED UPDATE METHOD ---
+    public override void OnNetworkSpawn()
+    {
+        networkIsActive.OnValueChanged += OnActiveStateChanged;
+
+        // Apply initial state
+        if (!IsServer)
+        {
+            agent = GetComponent<NavMeshAgent>();
+            if (agent != null) agent.enabled = false;
+        }
+
+        // Initial deactivation
+        SetMonsterVisibility(networkIsActive.Value);
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        networkIsActive.OnValueChanged -= OnActiveStateChanged;
+    }
+
+    private void OnActiveStateChanged(bool previousValue, bool newValue)
+    {
+        SetMonsterVisibility(newValue);
+
+        if (newValue)
+        {
+            // Play wake-up sound on all clients
+            if (wakeUpSound != null && effectAudioSource != null)
+            {
+                effectAudioSource.PlayOneShot(wakeUpSound, wakeUpVolume);
+            }
+        }
+        else
+        {
+            StopFootsteps();
+        }
+
+        if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateMonsterIcon(this, newValue);
+    }
+
+    private void SetMonsterVisibility(bool visible)
+    {
+        if (cachedRenderers != null)
+        {
+            foreach (var r in cachedRenderers)
+            {
+                if (r != null) r.enabled = visible;
+            }
+        }
+
+        if (cachedColliders != null)
+        {
+            foreach (var c in cachedColliders)
+            {
+                if (c != null) c.enabled = visible;
+            }
+        }
+
+        if (noiseIndicator != null) noiseIndicator.SetActive(false);
+        if (lightEffectIndicator != null) lightEffectIndicator.SetActive(false);
+    }
+
+    // Find the closest alive player from GameManager's list
+    protected Transform FindClosestPlayer()
+    {
+        if (GameManager.Instance == null) return null;
+
+        List<GameObject> players = GameManager.Instance.GetActivePlayers();
+        Transform closest = null;
+        float closestDist = float.MaxValue;
+
+        foreach (var p in players)
+        {
+            if (p == null) continue;
+
+            // Skip dead players
+            var health = p.GetComponent<PlayerHealth>();
+            if (health != null && health.GetCurrentHealth() <= 0) continue;
+
+            float dist = Vector3.Distance(transform.position, p.transform.position);
+            if (dist < closestDist)
+            {
+                closestDist = dist;
+                closest = p.transform;
+            }
+        }
+
+        return closest;
+    }
+
     protected virtual void Update()
     {
-        // Debug Toggle Logic (Fixed syntax)
+        // Only server runs AI logic
+        if (!IsServer) return;
+
+        // Debug Toggle Logic
         if (debugToggleActive != isActive)
         {
             if (debugToggleActive) ActivateMonster();
@@ -151,6 +255,8 @@ public class MonsterAI : MonoBehaviour
             return;
         }
 
+        // Update player target each frame (closest alive player)
+        player = FindClosestPlayer();
         if (player == null) return;
 
         // Check for lights to break
@@ -163,7 +269,7 @@ public class MonsterAI : MonoBehaviour
         // Handle flashlight effect
         UpdateFlashlightEffect();
 
-        // --- NEW: Handle Noise Indicator Timer ---
+        // Handle Noise Indicator Timer
         if (noiseIndicatorTimer > 0)
         {
             noiseIndicatorTimer -= Time.deltaTime;
@@ -173,7 +279,6 @@ public class MonsterAI : MonoBehaviour
         {
             if (noiseIndicator != null) noiseIndicator.SetActive(false);
         }
-        // ----------------------------------------
 
         float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
@@ -356,7 +461,7 @@ public class MonsterAI : MonoBehaviour
 
     void StopFootsteps()
     {
-        if (footstepAudioSource.isPlaying) footstepAudioSource.Stop();
+        if (footstepAudioSource != null && footstepAudioSource.isPlaying) footstepAudioSource.Stop();
     }
 
     void TryAttack()
@@ -382,13 +487,18 @@ public class MonsterAI : MonoBehaviour
 
         if (animator != null) animator.SetTrigger("Attack");
 
+        if (player == null) return;
+
         PlayerHealth playerHealth = player.GetComponent<PlayerHealth>();
-        if (playerHealth != null) playerHealth.TakeDamage(attackDamage);
-        else if (GameManager.Instance != null) GameManager.Instance.OnPlayerDeath();
+        if (playerHealth != null)
+        {
+            playerHealth.TakeDamageServerRpc(attackDamage);
+        }
     }
 
     public void Sleep(float duration)
     {
+        if (!IsServer) return;
         if (!isAsleep && isActive) StartCoroutine(SleepCoroutine(duration));
     }
 
@@ -438,8 +548,9 @@ public class MonsterAI : MonoBehaviour
 
     public void ActivateMonster()
     {
-        isActive = true;
-        gameObject.SetActive(true);
+        if (!IsServer) return;
+
+        networkIsActive.Value = true;
 
         if (agent != null)
         {
@@ -447,18 +558,14 @@ public class MonsterAI : MonoBehaviour
             agent.isStopped = false;
         }
 
-        if (wakeUpSound != null && effectAudioSource != null)
-        {
-            effectAudioSource.PlayOneShot(wakeUpSound, wakeUpVolume);
-        }
-
         EnterPatrolState();
-        if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateMonsterIcon(this, true);
     }
 
     public void DeactivateMonster()
     {
-        isActive = false;
+        if (!IsServer) return;
+
+        networkIsActive.Value = false;
         isAsleep = false;
         currentState = AIState.Idle;
 
@@ -467,14 +574,11 @@ public class MonsterAI : MonoBehaviour
         StopFootsteps();
         if (noiseIndicator != null) noiseIndicator.SetActive(false);
         if (lightEffectIndicator != null) lightEffectIndicator.SetActive(false);
-
-        if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateMonsterIcon(this, false);
     }
 
     public void ResetMonster()
     {
-        transform.position = originalPosition;
-        transform.rotation = originalRotation;
+        if (!IsServer) return;
 
         isAsleep = false;
         lastAttackTime = 0;
@@ -486,6 +590,9 @@ public class MonsterAI : MonoBehaviour
             agent.Warp(originalPosition);
             agent.isStopped = true;
         }
+
+        transform.position = originalPosition;
+        transform.rotation = originalRotation;
 
         StopFootsteps();
         if (noiseIndicator != null) noiseIndicator.SetActive(false);
@@ -550,6 +657,8 @@ public class MonsterAI : MonoBehaviour
 
     public void OnNoiseDetected(Vector3 noisePosition)
     {
+        if (!IsServer) return;
+
         if (!isAsleep && isActive && currentState != AIState.Chasing && currentState != AIState.Attacking)
         {
             lastKnownPlayerPosition = noisePosition;

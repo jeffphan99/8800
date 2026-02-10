@@ -24,18 +24,6 @@ public class Interactable : MonoBehaviour
 
     void Start()
     {
-        GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
-        if (playerObj != null)
-        {
-            player = playerObj.transform;
-            _input = playerObj.GetComponent<StarterAssetsInputs>();
-        }
-
-        if (_input == null)
-        {
-            Debug.LogError("StarterAssetsInputs component not found on Player!");
-        }
-
         if (interactionUI != null)
         {
             interactionUI.SetActive(false);
@@ -47,8 +35,23 @@ public class Interactable : MonoBehaviour
         }
     }
 
+    void FindLocalPlayer()
+    {
+        GameObject playerObj = PlayerHealth.LocalPlayer;
+        if (playerObj != null)
+        {
+            player = playerObj.transform;
+            _input = playerObj.GetComponent<StarterAssetsInputs>();
+        }
+    }
+
     void Update()
     {
+        // Lazy-init: player spawns after scene objects
+        if (player == null)
+        {
+            FindLocalPlayer();
+        }
 
         if (player == null || GameManager.Instance != null && !GameManager.Instance.IsRoundActive()) return;
 

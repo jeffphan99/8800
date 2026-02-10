@@ -18,6 +18,9 @@ public class MonsterStalker : MonsterAI
     {
         base.Update();
 
+        // Only server runs AI logic
+        if (!IsServer) return;
+
         if (isEnraged)
         {
             enrageTimer -= Time.deltaTime;
