@@ -157,8 +157,10 @@ public class MonsterAI : NetworkBehaviour
             if (agent != null) agent.enabled = false;
         }
 
-        // Initial deactivation
-        SetMonsterVisibility(networkIsActive.Value);
+        // Always show renderers so monster is visible from the start.
+        // AI movement is gated separately by networkIsActive.
+        SetRendererVisibility(true);
+        SetColliderState(networkIsActive.Value);
     }
 
     public override void OnNetworkDespawn()
@@ -168,15 +170,12 @@ public class MonsterAI : NetworkBehaviour
 
     private void OnActiveStateChanged(bool previousValue, bool newValue)
     {
-        SetMonsterVisibility(newValue);
+        SetColliderState(newValue);
 
         if (newValue)
         {
-            // Play wake-up sound on all clients
             if (wakeUpSound != null && effectAudioSource != null)
-            {
                 effectAudioSource.PlayOneShot(wakeUpSound, wakeUpVolume);
-            }
         }
         else
         {
@@ -186,26 +185,28 @@ public class MonsterAI : NetworkBehaviour
         if (MinimapManager.Instance != null) MinimapManager.Instance.UpdateMonsterIcon(this, newValue);
     }
 
-    private void SetMonsterVisibility(bool visible)
+    private void SetRendererVisibility(bool visible)
     {
-        if (cachedRenderers != null)
-        {
-            foreach (var r in cachedRenderers)
-            {
-                if (r != null) r.enabled = visible;
-            }
-        }
+        if (cachedRenderers == null) return;
+        foreach (var r in cachedRenderers)
+            if (r != null) r.enabled = visible;
+    }
 
+    private void SetColliderState(bool active)
+    {
         if (cachedColliders != null)
-        {
             foreach (var c in cachedColliders)
-            {
-                if (c != null) c.enabled = visible;
-            }
-        }
+                if (c != null) c.enabled = active;
 
         if (noiseIndicator != null) noiseIndicator.SetActive(false);
         if (lightEffectIndicator != null) lightEffectIndicator.SetActive(false);
+    }
+
+    // Kept for external callers that expect this method name
+    private void SetMonsterVisibility(bool visible)
+    {
+        SetRendererVisibility(visible);
+        SetColliderState(visible);
     }
 
     // Find the closest alive player from GameManager's list

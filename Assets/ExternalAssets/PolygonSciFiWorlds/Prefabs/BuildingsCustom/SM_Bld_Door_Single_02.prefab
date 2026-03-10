@@ -225,6 +225,7 @@ GameObject:
   - component: {fileID: 23190054989677134}
   - component: {fileID: 64266077084173602}
   - component: {fileID: 2342108721496505251}
+  - component: {fileID: 1908036994622594604}
   - component: {fileID: 2153941156129840574}
   - component: {fileID: -173833211572399345}
   m_Layer: 0
@@ -336,6 +337,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   interactionPrompt: Press E to interact
   interactionRange: 20
+  interactionUI: {fileID: 0}
+  promptText: {fileID: 0}
   onInteract:
     m_PersistentCalls:
       m_Calls:
@@ -351,6 +354,27 @@ MonoBehaviour:
           m_StringArgument: 
           m_BoolArgument: 0
         m_CallState: 2
+--- !u!114 &1908036994622594604
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1263679602772052}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 4050135014
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
 --- !u!114 &2153941156129840574
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -367,6 +391,7 @@ MonoBehaviour:
   openPosition: {x: 0, y: -2.6, z: 0}
   openSpeed: 3
   startsOpen: 0
+  interactDistance: 3
 --- !u!65 &-173833211572399345
 BoxCollider:
   m_ObjectHideFlags: 0
