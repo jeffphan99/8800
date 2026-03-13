@@ -14,6 +14,7 @@ public class GameManager : NetworkBehaviour
     public float terminalRepairTime = 15f;
 
     [Header("References")]
+    public GameObject playerPrefab;
     public Transform playerSpawnPoint;
     public List<Transform> monsterSpawnPoints = new List<Transform>();
     public List<Terminal> allTerminals = new List<Terminal>();
@@ -91,7 +92,36 @@ public class GameManager : NetworkBehaviour
     {
         if (IsServer)
         {
-            StartCoroutine(WaitForPlayersAndStart());
+            // Delay spawn slightly so clients have finished loading the scene
+            StartCoroutine(DelayedSpawnAndStart());
+        }
+    }
+
+    private IEnumerator DelayedSpawnAndStart()
+    {
+        // Wait a frame for all scene objects to initialize on clients
+        yield return null;
+        SpawnPlayers();
+        StartCoroutine(WaitForPlayersAndStart());
+    }
+
+    void SpawnPlayers()
+    {
+        if (playerPrefab == null)
+        {
+            Debug.LogError("[GameManager] playerPrefab not assigned!");
+            return;
+        }
+
+        foreach (var client in NetworkManager.Singleton.ConnectedClients)
+        {
+            Vector3 pos = playerSpawnPoint != null ? playerSpawnPoint.position : Vector3.zero;
+            Quaternion rot = playerSpawnPoint != null ? playerSpawnPoint.rotation : Quaternion.identity;
+
+            var player = Instantiate(playerPrefab, pos, rot);
+            var netObj = player.GetComponent<NetworkObject>();
+            netObj.SpawnAsPlayerObject(client.Key);
+            Debug.Log($"[GameManager] Spawned player for client {client.Key}");
         }
     }
 

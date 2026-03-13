@@ -79,19 +79,13 @@ public class PlayerHealth : NetworkBehaviour
         }
 
         // Point the scene's Cinemachine virtual camera at this player's camera root.
-        // The scene camera's Follow target is null after removing the scene-placed player.
         var cameraRoot = transform.Find("PlayerCameraRoot");
         if (cameraRoot != null)
         {
-            var allVCams = FindObjectsOfType<Cinemachine.CinemachineVirtualCamera>();
-            foreach (var vcam in allVCams)
+            if (!TryBindCinemachine(cameraRoot))
             {
-                // Skip any vcam that's a child of a player (e.g. minimap cameras)
-                if (vcam.GetComponentInParent<PlayerHealth>() != null)
-                    continue;
-                vcam.Follow = cameraRoot;
-                Debug.Log($"[PlayerHealth] Set Cinemachine Follow to {cameraRoot.name}");
-                break;
+                // Scene camera may not be ready yet (loading from lobby), retry shortly
+                StartCoroutine(RetryBindCinemachine(cameraRoot));
             }
         }
 
@@ -105,6 +99,31 @@ public class PlayerHealth : NetworkBehaviour
 
         LocalPlayer = gameObject;
         Debug.Log($"[PlayerHealth] Owner setup complete on {gameObject.name}");
+    }
+
+    private bool TryBindCinemachine(Transform cameraRoot)
+    {
+        var allVCams = FindObjectsOfType<Cinemachine.CinemachineVirtualCamera>();
+        foreach (var vcam in allVCams)
+        {
+            if (vcam.GetComponentInParent<PlayerHealth>() != null)
+                continue;
+            vcam.Follow = cameraRoot;
+            Debug.Log($"[PlayerHealth] Set Cinemachine Follow to {cameraRoot.name}");
+            return true;
+        }
+        return false;
+    }
+
+    private System.Collections.IEnumerator RetryBindCinemachine(Transform cameraRoot)
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            yield return null;
+            if (TryBindCinemachine(cameraRoot))
+                yield break;
+        }
+        Debug.LogWarning("[PlayerHealth] Could not find scene Cinemachine camera to bind to.");
     }
 
     private void DisableNonOwnerComponents()

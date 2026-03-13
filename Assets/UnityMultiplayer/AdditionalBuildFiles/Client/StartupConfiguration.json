@@ -6,5 +6,5 @@
    "Port" : "9797", 
    "EnableBots" : "False", 
    "ServerIP" : "127.0.0.1", 
-   "AutoConnect" : "True"
+   "AutoConnect" : "False"
 }

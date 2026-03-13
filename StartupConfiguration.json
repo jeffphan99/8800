@@ -7,5 +7,5 @@
    "EnableBots" : "false", 
    "AllowReconnection" : "false", 
    "ServerIP" : "127.0.0.1", 
-   "AutoConnect" : "True"
+   "AutoConnect" : "False"
 }
