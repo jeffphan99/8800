@@ -25,7 +25,7 @@ public class Door : NetworkBehaviour
 
     private bool isMoving = false;
 
-    void Start()
+    void Awake()
     {
         if (doorTransform == null)
         {
@@ -33,8 +33,11 @@ public class Door : NetworkBehaviour
         }
 
         closedPosition = doorTransform.localPosition;
+    }
 
-        if (startsOpen)
+    void Start()
+    {
+        if (startsOpen && !IsSpawned)
         {
             doorTransform.localPosition = closedPosition + openPosition;
         }
