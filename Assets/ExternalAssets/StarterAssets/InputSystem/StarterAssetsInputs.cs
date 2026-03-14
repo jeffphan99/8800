@@ -90,6 +90,18 @@ namespace StarterAssets
 			if (value.isPressed)
 				WeaponSlotInput(3);
 		}
+
+		public void OnWeaponSlot5(InputValue value)
+		{
+			if (value.isPressed)
+				WeaponSlotInput(4);
+		}
+
+		public void OnWeaponSlot6(InputValue value)
+		{
+			if (value.isPressed)
+				WeaponSlotInput(5);
+		}
 #endif
 
         public void MoveInput(Vector2 newMoveDirection)

@@ -252,7 +252,7 @@ public class GameManager : NetworkBehaviour
             terminalWarningText.color = Color.green;
         }
 
-        // Re-enable controls for all local players (in case they were spectating)
+        // Re-enable controls and replenish weapons for all local players
         foreach (var playerObj in activePlayers)
         {
             if (playerObj == null) continue;
@@ -260,6 +260,14 @@ public class GameManager : NetworkBehaviour
             if (health != null && health.IsOwner)
             {
                 health.ReenableControls();
+
+                // Replenish force gun uses
+                var forceGun = playerObj.GetComponentInChildren<ForceGunWeapon>(true);
+                if (forceGun != null) forceGun.Replenish();
+
+                // Replenish jukebox battery
+                var jukebox = playerObj.GetComponentInChildren<JukeboxWeapon>(true);
+                if (jukebox != null) jukebox.Replenish();
             }
         }
     }

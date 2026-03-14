@@ -67,6 +67,10 @@ namespace StarterAssets
         private float _verticalVelocity;
         private float _terminalVelocity = 53.0f;
 
+        // external impulse (force gun knockback, etc.)
+        private Vector3 _externalVelocity;
+        private const float ExternalVelocityDrag = 5f;
+
         // timeout deltatime
         private float _jumpTimeoutDelta;
         private float _fallTimeoutDelta;
@@ -317,8 +321,19 @@ namespace StarterAssets
                 _animator.SetBool("Run", isRunning);
             }
 
+            // decay external velocity (knockback)
+            _externalVelocity = Vector3.Lerp(_externalVelocity, Vector3.zero, ExternalVelocityDrag * Time.deltaTime);
+            if (_externalVelocity.magnitude < 0.01f) _externalVelocity = Vector3.zero;
+
             // move the player
-            _controller.Move(inputDirection.normalized * (_speed * Time.deltaTime) + new Vector3(0.0f, _verticalVelocity, 0.0f) * Time.deltaTime);
+            _controller.Move(inputDirection.normalized * (_speed * Time.deltaTime)
+                + new Vector3(0.0f, _verticalVelocity, 0.0f) * Time.deltaTime
+                + _externalVelocity * Time.deltaTime);
+        }
+
+        public void AddExternalForce(Vector3 velocity)
+        {
+            _externalVelocity += velocity;
         }
 
         private void JumpAndGravity()

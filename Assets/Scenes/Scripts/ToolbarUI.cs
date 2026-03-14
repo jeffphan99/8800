@@ -20,13 +20,15 @@ public class ToolbarUI_Simple : MonoBehaviour
     }
 
     [Header("Weapon Slots")]
-    public WeaponSlot[] weaponSlots = new WeaponSlot[4];
+    public WeaponSlot[] weaponSlots = new WeaponSlot[6];
 
     [Header("Weapon Names")]
     public string gunName = "Gun";
     public string flashlightName = "Light";
     public string repairName = "Repair";
     public string bananaName = "Banana";
+    public string forceGunName = "Force";
+    public string jukeboxName = "Jukebox";
 
 
     [Header("References")]
@@ -67,6 +69,8 @@ public class ToolbarUI_Simple : MonoBehaviour
         if (weaponSlots.Length > 1) weaponSlots[1].weaponName = flashlightName;
         if (weaponSlots.Length > 2) weaponSlots[2].weaponName = repairName;
         if (weaponSlots.Length > 3) weaponSlots[3].weaponName = bananaName;
+        if (weaponSlots.Length > 4) weaponSlots[4].weaponName = forceGunName;
+        if (weaponSlots.Length > 5) weaponSlots[5].weaponName = jukeboxName;
     }
 
     void InitializeSlots()

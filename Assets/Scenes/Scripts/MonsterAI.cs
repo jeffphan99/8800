@@ -209,10 +209,15 @@ public class MonsterAI : NetworkBehaviour
         SetColliderState(visible);
     }
 
-    // Find the closest alive player from GameManager's list
+    // Find the closest alive player from GameManager's list.
+    // Active jukeboxes within range override normal targeting (taunt).
     protected Transform FindClosestPlayer()
     {
         if (GameManager.Instance == null) return null;
+
+        // Check for active jukebox taunt — always takes priority
+        Transform tauntTarget = FindJukeboxTaunt();
+        if (tauntTarget != null) return tauntTarget;
 
         List<GameObject> players = GameManager.Instance.GetActivePlayers();
         Transform closest = null;
@@ -231,6 +236,28 @@ public class MonsterAI : NetworkBehaviour
             {
                 closestDist = dist;
                 closest = p.transform;
+            }
+        }
+
+        return closest;
+    }
+
+    private Transform FindJukeboxTaunt()
+    {
+        Transform closest = null;
+        float closestDist = float.MaxValue;
+
+        foreach (var jukebox in JukeboxWeapon.ActiveJukeboxes)
+        {
+            if (jukebox == null || !jukebox.IsActive()) continue;
+
+            Vector3 jukeboxPos = jukebox.GetPlayerPosition();
+            float dist = Vector3.Distance(transform.position, jukeboxPos);
+
+            if (dist <= jukebox.GetAggroRadius() && dist < closestDist)
+            {
+                closestDist = dist;
+                closest = jukebox.transform.root;
             }
         }
 
@@ -338,6 +365,9 @@ public class MonsterAI : NetworkBehaviour
 
     protected virtual bool DetectPlayer()
     {
+        // Jukebox taunt overrides normal detection range
+        if (FindJukeboxTaunt() != null) return true;
+
         float distanceToPlayer = Vector3.Distance(transform.position, player.position);
         return distanceToPlayer <= detectionRange;
     }

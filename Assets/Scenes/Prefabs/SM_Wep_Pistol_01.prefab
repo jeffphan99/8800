@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 33619305902770488}
   - component: {fileID: 23968309817802240}
   - component: {fileID: 64713788366742256}
+  - component: {fileID: 7117578670745545506}
   m_Layer: 0
   m_Name: SM_Wep_Pistol_01
   m_TagString: Untagged
@@ -108,6 +109,35 @@ MeshCollider:
   m_Convex: 1
   m_CookingOptions: 30
   m_Mesh: {fileID: 43690764494722020, guid: 5dd5644c87110d64fb012d559bc076cc, type: 2}
+--- !u!114 &7117578670745545506
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1367665479152036}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fac83d4cee5ee134992f71b092acfdb8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxUses: 2
+  maxChargeTime: 1.5
+  blastRadius: 3
+  minBlastLength: 5
+  maxBlastLength: 15
+  minForce: 8
+  maxForce: 22
+  verticalLift: 0.2
+  selfKnockbackMultiplier: 0.5
+  affectedLayers:
+    serializedVersion: 2
+    m_Bits: 136
+  audioSource: {fileID: 0}
+  chargeSound: {fileID: 0}
+  fireSound: {fileID: 0}
+  emptySound: {fileID: 0}
+  blastEffect: {fileID: 0}
 --- !u!1 &1630261791982306
 GameObject:
   m_ObjectHideFlags: 0
@@ -202,13 +232,14 @@ GameObject:
   - component: {fileID: 4314628206059562}
   - component: {fileID: 33768040540660598}
   - component: {fileID: 23985432916948748}
+  - component: {fileID: 2147419830270574888}
   m_Layer: 0
   m_Name: SM_Wep_Pistol_01_Scope_01
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &4314628206059562
 Transform:
   m_ObjectHideFlags: 0
@@ -274,3 +305,32 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!114 &2147419830270574888
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1884452847395956}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fac83d4cee5ee134992f71b092acfdb8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxUses: 2
+  maxChargeTime: 1.5
+  blastRadius: 3
+  minBlastLength: 5
+  maxBlastLength: 15
+  minForce: 8
+  maxForce: 22
+  verticalLift: 0.2
+  selfKnockbackMultiplier: 0.5
+  affectedLayers:
+    serializedVersion: 2
+    m_Bits: 136
+  audioSource: {fileID: 0}
+  chargeSound: {fileID: 0}
+  fireSound: {fileID: 0}
+  emptySound: {fileID: 0}
+  blastEffect: {fileID: 0}
