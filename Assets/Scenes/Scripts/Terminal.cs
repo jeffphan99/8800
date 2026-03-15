@@ -22,6 +22,10 @@ public class Terminal : NetworkBehaviour
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private NetworkVariable<ulong> repairingPlayerId = new NetworkVariable<ulong>(
         ulong.MaxValue, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private NetworkVariable<int> assignedRole = new NetworkVariable<int>(
+        0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    public PlayerRole AssignedRole => (PlayerRole)assignedRole.Value;
 
     // Local shortcut
     public bool isBroken => networkIsBroken.Value;
@@ -247,6 +251,9 @@ public class Terminal : NetworkBehaviour
             feedbackText.color = Color.yellow;
         }
 
+        // Show failure risk based on role match
+        ShowFailureRisk();
+
         // Lock Player Movement
         if (playerInput != null)
         {
@@ -263,6 +270,39 @@ public class Terminal : NetworkBehaviour
 
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+    }
+
+    private void ShowFailureRisk()
+    {
+        Text failureRiskText = null;
+        GameObject riskObj = GameObject.Find("FailureRiskText");
+        if (riskObj != null)
+            failureRiskText = riskObj.GetComponent<Text>();
+
+        if (failureRiskText == null) return;
+
+        // Get local player's role
+        GameObject localPlayer = PlayerHealth.LocalPlayer;
+        if (localPlayer == null) return;
+
+        var roleCtrl = localPlayer.GetComponent<PlayerRoleController>();
+        if (roleCtrl == null) return;
+
+        PlayerRole playerRole = roleCtrl.Role;
+        PlayerRole terminalRole = AssignedRole;
+
+        if (playerRole == terminalRole || terminalRole == PlayerRole.None)
+        {
+            failureRiskText.text = "Role Match \u2014 No failure risk";
+            failureRiskText.color = Color.green;
+        }
+        else
+        {
+            int currentRound = GameManager.Instance != null ? GameManager.Instance.CurrentRound : 1;
+            int failurePercent = currentRound * 15;
+            failureRiskText.text = $"Role Mismatch \u2014 {failurePercent}% failure risk";
+            failureRiskText.color = new Color(1f, 0.5f, 0f); // orange
+        }
     }
 
     void Update()
@@ -354,10 +394,35 @@ public class Terminal : NetworkBehaviour
     }
 
     [ServerRpc(RequireOwnership = false)]
-    private void CompleteRepairServerRpc()
+    private void CompleteRepairServerRpc(ServerRpcParams rpcParams = default)
     {
+        // Capture repairer before clearing
+        ulong repairerId = repairingPlayerId.Value;
+
         networkIsBroken.Value = false;
         repairingPlayerId.Value = ulong.MaxValue;
+
+        // Check role mismatch — may release a monster even though terminal is fixed
+        if (repairerId != ulong.MaxValue && AssignedRole != PlayerRole.None)
+        {
+            if (NetworkManager.ConnectedClients.TryGetValue(repairerId, out var client) && client.PlayerObject != null)
+            {
+                var roleCtrl = client.PlayerObject.GetComponent<PlayerRoleController>();
+                if (roleCtrl != null && roleCtrl.Role != AssignedRole)
+                {
+                    int currentRound = GameManager.Instance != null ? GameManager.Instance.CurrentRound : 1;
+                    float failureChance = 0.15f * currentRound;
+                    if (Random.value < failureChance)
+                    {
+                        Debug.Log($"[Terminal] Role mismatch failure! Player role={roleCtrl.Role}, terminal role={AssignedRole}, chance={failureChance}");
+                        if (GameManager.Instance != null)
+                        {
+                            GameManager.Instance.TerminalRepairFailed();
+                        }
+                    }
+                }
+            }
+        }
 
         if (GameManager.Instance != null)
         {
@@ -383,6 +448,14 @@ public class Terminal : NetworkBehaviour
         minigameActive = false;
         HideUI();
 
+        // Clear failure risk text
+        GameObject riskObj = GameObject.Find("FailureRiskText");
+        if (riskObj != null)
+        {
+            Text riskText = riskObj.GetComponent<Text>();
+            if (riskText != null) riskText.text = "";
+        }
+
         if (playerInput != null)
         {
             playerInput.cursorLocked = true;
@@ -404,6 +477,12 @@ public class Terminal : NetworkBehaviour
         networkIsBroken.Value = true;
     }
 
+    public void SetAssignedRole(PlayerRole role)
+    {
+        if (!IsServer) return;
+        assignedRole.Value = (int)role;
+    }
+
     // Called by GameManager on server only
     public void ResetTerminal()
     {
@@ -411,6 +490,7 @@ public class Terminal : NetworkBehaviour
 
         networkIsBroken.Value = false;
         repairingPlayerId.Value = ulong.MaxValue;
+        assignedRole.Value = 0;
         // Local cleanup for any client running the minigame will happen via OnBrokenStateChanged
     }
 

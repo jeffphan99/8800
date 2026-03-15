@@ -33,6 +33,10 @@ public class GameManager : NetworkBehaviour
         0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private NetworkVariable<bool> networkRoundActive = new NetworkVariable<bool>(
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private NetworkVariable<int> networkCurrentRound = new NetworkVariable<int>(
+        0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    public int CurrentRound => networkCurrentRound.Value;
 
     private float currentRoundTime;
     private float nextTerminalBreakTime;
@@ -197,6 +201,7 @@ public class GameManager : NetworkBehaviour
         currentRoundTime = roundTime;
         networkRoundTime.Value = roundTime;
         terminalNeedsRepair = false;
+        networkCurrentRound.Value++;
 
         // Reset all players
         ResetAllPlayers();
@@ -226,6 +231,35 @@ public class GameManager : NetworkBehaviour
             if (terminal != null)
             {
                 terminal.ResetTerminal();
+            }
+        }
+
+        // Assign roles to players (no duplicates)
+        List<PlayerRole> rolePool = new List<PlayerRole> { PlayerRole.Silverback, PlayerRole.Neurochimp, PlayerRole.WrenchMonkey };
+        ShuffleList(rolePool);
+
+        List<PlayerRole> assignedRoles = new List<PlayerRole>();
+        for (int i = 0; i < activePlayers.Count && i < rolePool.Count; i++)
+        {
+            var roleCtrl = activePlayers[i].GetComponent<PlayerRoleController>();
+            if (roleCtrl != null)
+            {
+                roleCtrl.SetRole(rolePool[i]);
+                assignedRoles.Add(rolePool[i]);
+                Debug.Log($"[GameManager] Assigned role {rolePool[i]} to player {i}");
+            }
+        }
+
+        // Assign a random role to each terminal (from roles actually in play)
+        if (assignedRoles.Count > 0)
+        {
+            foreach (Terminal terminal in allTerminals)
+            {
+                if (terminal != null)
+                {
+                    PlayerRole terminalRole = assignedRoles[Random.Range(0, assignedRoles.Count)];
+                    terminal.SetAssignedRole(terminalRole);
+                }
             }
         }
 
@@ -332,7 +366,7 @@ public class GameManager : NetworkBehaviour
         }
     }
 
-    void TerminalRepairFailed()
+    public void TerminalRepairFailed()
     {
         Debug.Log("=== TERMINAL REPAIR FAILED! ===");
 
@@ -510,5 +544,16 @@ public class GameManager : NetworkBehaviour
     public bool IsRoundActive()
     {
         return IsServer ? roundActive : networkRoundActive.Value;
+    }
+
+    private void ShuffleList<T>(List<T> list)
+    {
+        for (int i = list.Count - 1; i > 0; i--)
+        {
+            int j = Random.Range(0, i + 1);
+            T temp = list[i];
+            list[i] = list[j];
+            list[j] = temp;
+        }
     }
 }
