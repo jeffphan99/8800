@@ -32,6 +32,22 @@ namespace StarterAssets
                 }
             }
 
+            // Find scene UI elements at runtime (can't assign scene objects to prefab fields)
+            if (statusText == null)
+            {
+                GameObject obj = GameObject.Find("Ammo");
+                if (obj != null) statusText = obj.GetComponent<Text>();
+            }
+            if (actionText == null)
+            {
+                GameObject obj = GameObject.Find("Reload");
+                if (obj != null) actionText = obj.GetComponent<Text>();
+            }
+            if (playerCamera == null)
+            {
+                playerCamera = Camera.main;
+            }
+
             // Setup all weapons with shared references
             for (int i = 0; i < weapons.Length; i++)
             {

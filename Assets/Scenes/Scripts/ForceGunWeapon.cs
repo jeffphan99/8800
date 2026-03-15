@@ -224,7 +224,6 @@ public class ForceGunWeapon : WeaponBase
         UnityEngine.AI.NavMeshAgent agent = monster.GetComponent<UnityEngine.AI.NavMeshAgent>();
         if (agent == null || !agent.isOnNavMesh) yield break;
 
-        // Briefly disable agent to apply force manually
         float pushDuration = 0.4f;
         float elapsed = 0f;
 
@@ -232,17 +231,28 @@ public class ForceGunWeapon : WeaponBase
         agent.updatePosition = false;
 
         Vector3 startPos = monster.transform.position;
-        Vector3 endPos = startPos + new Vector3(forceVector.x, 0f, forceVector.z) * 0.5f;
+        Vector3 pushDir = new Vector3(forceVector.x, 0f, forceVector.z);
+        float pushDist = pushDir.magnitude * 0.5f;
+        pushDir.Normalize();
+
+        // Raycast to find walls — stop before hitting one
+        // Cast from chest height to catch walls the monster would hit
+        Vector3 rayOrigin = startPos + Vector3.up * 1f;
+        float monsterRadius = 0.5f; // buffer so monster doesn't end up flush against wall
+        if (Physics.Raycast(rayOrigin, pushDir, out RaycastHit wallHit, pushDist + monsterRadius))
+        {
+            pushDist = Mathf.Max(0f, wallHit.distance - monsterRadius);
+        }
+
+        Vector3 endPos = startPos + pushDir * pushDist;
 
         while (elapsed < pushDuration)
         {
             elapsed += Time.deltaTime;
             float t = elapsed / pushDuration;
-            // Ease out curve
             float easedT = 1f - (1f - t) * (1f - t);
 
             Vector3 pos = Vector3.Lerp(startPos, endPos, easedT);
-            // Add vertical arc
             pos.y += Mathf.Sin(t * Mathf.PI) * forceVector.y * 0.3f;
 
             monster.transform.position = pos;

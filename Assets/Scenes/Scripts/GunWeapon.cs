@@ -41,10 +41,13 @@ public class FreezeGunWeapon : WeaponBase
     private int currentAmmo;
     private bool isReloading = false;
 
-    void Start()
+    void Awake()
     {
         currentAmmo = maxAmmo;
+    }
 
+    void Start()
+    {
         if (lineRenderer != null)
         {
             lineRenderer.enabled = false;
