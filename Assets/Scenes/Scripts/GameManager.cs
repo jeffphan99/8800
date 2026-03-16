@@ -12,6 +12,14 @@ public class GameManager : NetworkBehaviour
     public float roundTime = 120f;
     public float terminalBreakInterval = 30f;
     public float terminalRepairTime = 15f;
+    public float minTerminalBreakInterval = 15f;
+    public float terminalBreakIntervalReduction = 2f;
+
+    [Header("Difficulty Scaling")]
+    public float monsterChaseSpeedScale = 0.1f;
+    public int extraMonsterEveryNRounds = 3;
+    public float gameOverDelay = 5f;
+    public int maxRounds = 3;
 
     [Header("References")]
     public GameObject playerPrefab;
@@ -20,6 +28,7 @@ public class GameManager : NetworkBehaviour
     public List<Terminal> allTerminals = new List<Terminal>();
     public List<MonsterAI> allMonsters = new List<MonsterAI>();
     public List<Door> allDoors = new List<Door>();
+    public List<RoomLight> allLights = new List<RoomLight>();
 
     [Header("UI")]
     public Text roundTimerText;
@@ -77,6 +86,9 @@ public class GameManager : NetworkBehaviour
 
         allDoors.AddRange(FindObjectsOfType<Door>(true));
         Debug.Log($"[GameManager] Found {allDoors.Count} doors");
+
+        allLights.AddRange(FindObjectsOfType<RoomLight>(true));
+        Debug.Log($"[GameManager] Found {allLights.Count} lights");
 
         if (winPanel != null) winPanel.SetActive(false);
         if (losePanel != null) losePanel.SetActive(false);
@@ -234,6 +246,25 @@ public class GameManager : NetworkBehaviour
             }
         }
 
+        // Repair all broken lights
+        foreach (RoomLight light in allLights)
+        {
+            if (light != null && light.isBroken)
+            {
+                light.RepairLight();
+            }
+        }
+
+        // Apply difficulty scaling — monsters get faster each round
+        int round = networkCurrentRound.Value;
+        foreach (MonsterAI monster in allMonsters)
+        {
+            if (monster != null)
+            {
+                monster.chaseSpeed = 4f * (1f + monsterChaseSpeedScale * (round - 1));
+            }
+        }
+
         // Assign roles to players (no duplicates)
         List<PlayerRole> rolePool = new List<PlayerRole> { PlayerRole.Silverback, PlayerRole.Neurochimp, PlayerRole.WrenchMonkey };
         ShuffleList(rolePool);
@@ -263,7 +294,10 @@ public class GameManager : NetworkBehaviour
             }
         }
 
-        nextTerminalBreakTime = Time.time + terminalBreakInterval;
+        // Terminal break interval decreases with difficulty
+        float scaledBreakInterval = Mathf.Max(minTerminalBreakInterval,
+            terminalBreakInterval - terminalBreakIntervalReduction * (round - 1));
+        nextTerminalBreakTime = Time.time + scaledBreakInterval;
 
         OnRoundStartClientRpc();
     }
@@ -336,7 +370,14 @@ public class GameManager : NetworkBehaviour
             }
         }
 
-        if (workingTerminals.Count == 0) return;
+        if (workingTerminals.Count == 0)
+        {
+            // All terminals broken — reschedule check so scheduler doesn't stall
+            float scaledInterval = Mathf.Max(minTerminalBreakInterval,
+                terminalBreakInterval - terminalBreakIntervalReduction * (networkCurrentRound.Value - 1));
+            nextTerminalBreakTime = Time.time + scaledInterval;
+            return;
+        }
 
         currentBrokenTerminal = workingTerminals[Random.Range(0, workingTerminals.Count)];
         currentBrokenTerminal.BreakTerminal();
@@ -360,7 +401,9 @@ public class GameManager : NetworkBehaviour
             lastWarningSeconds = -1;
             currentBrokenTerminal = null;
 
-            nextTerminalBreakTime = Time.time + terminalBreakInterval;
+            float scaledInterval = Mathf.Max(minTerminalBreakInterval,
+                terminalBreakInterval - terminalBreakIntervalReduction * (networkCurrentRound.Value - 1));
+            nextTerminalBreakTime = Time.time + scaledInterval;
 
             UpdateWarningTextClientRpc("Terminal repaired! All systems operational", false);
         }
@@ -372,31 +415,36 @@ public class GameManager : NetworkBehaviour
 
         terminalNeedsRepair = false;
         lastWarningSeconds = -1;
-        MonsterAI activeMonster = null;
 
-        if (allMonsters.Count > 0)
+        // Determine how many monsters to release: 1 base + 1 per N rounds
+        int round = networkCurrentRound.Value;
+        int monstersToRelease = 1 + (round - 1) / extraMonsterEveryNRounds;
+
+        List<MonsterAI> inactiveMonsters = new List<MonsterAI>();
+        foreach (MonsterAI m in allMonsters)
         {
-            List<MonsterAI> validMonsters = new List<MonsterAI>();
-            foreach (MonsterAI m in allMonsters)
-            {
-                if (m != null) validMonsters.Add(m);
-            }
-
-            if (validMonsters.Count > 0)
-            {
-                int randomIndex = Random.Range(0, validMonsters.Count);
-                activeMonster = validMonsters[randomIndex];
-                activeMonster.ActivateMonster();
-                Debug.Log($"[GameManager] RELEASED MONSTER: {activeMonster.gameObject.name}");
-            }
+            if (m != null && !m.isActive) inactiveMonsters.Add(m);
         }
 
-        if (activeMonster != null && allDoors.Count > 0)
+        // Shuffle and release up to monstersToRelease
+        ShuffleList(inactiveMonsters);
+        int released = Mathf.Min(monstersToRelease, inactiveMonsters.Count);
+        MonsterAI firstMonster = null;
+
+        for (int i = 0; i < released; i++)
+        {
+            inactiveMonsters[i].ActivateMonster();
+            Debug.Log($"[GameManager] RELEASED MONSTER: {inactiveMonsters[i].gameObject.name}");
+            if (i == 0) firstMonster = inactiveMonsters[i];
+        }
+
+        // Open doors near the first released monster
+        if (firstMonster != null && allDoors.Count > 0)
         {
             allDoors.Sort((a, b) => {
                 if (a == null || b == null) return 0;
-                float distA = Vector3.Distance(activeMonster.transform.position, a.transform.position);
-                float distB = Vector3.Distance(activeMonster.transform.position, b.transform.position);
+                float distA = Vector3.Distance(firstMonster.transform.position, a.transform.position);
+                float distB = Vector3.Distance(firstMonster.transform.position, b.transform.position);
                 return distA.CompareTo(distB);
             });
 
@@ -411,10 +459,15 @@ public class GameManager : NetworkBehaviour
             }
         }
 
-        UpdateWarningTextClientRpc("CONTAINMENT BREACH! SECTOR UNLOCKED!", true);
+        string warningMsg = released > 1
+            ? $"CONTAINMENT BREACH! {released} MONSTERS RELEASED!"
+            : "CONTAINMENT BREACH! SECTOR UNLOCKED!";
+        UpdateWarningTextClientRpc(warningMsg, true);
         UpdateGameStatusClientRpc("DANGER! Monster is hunting you!", true);
 
-        nextTerminalBreakTime = Time.time + terminalBreakInterval;
+        float scaledInterval = Mathf.Max(minTerminalBreakInterval,
+            terminalBreakInterval - terminalBreakIntervalReduction * (round - 1));
+        nextTerminalBreakTime = Time.time + scaledInterval;
     }
 
     [ClientRpc]
@@ -475,27 +528,63 @@ public class GameManager : NetworkBehaviour
 
         if (playerWon)
         {
-            Debug.Log("=== PLAYERS SURVIVED THE ROUND! ===");
+            int currentRound = networkCurrentRound.Value;
+            Debug.Log($"=== PLAYERS SURVIVED ROUND {currentRound}! ===");
+
+            if (currentRound >= maxRounds)
+            {
+                // Players beat all rounds — final victory
+                Debug.Log("=== PLAYERS WIN THE GAME! ===");
+                OnRoundEndClientRpc(true, currentRound);
+                // Reset and restart after longer delay
+                networkCurrentRound.Value = 0;
+                Invoke(nameof(StartNewRound), gameOverDelay);
+            }
+            else
+            {
+                OnRoundEndClientRpc(true, currentRound);
+                Invoke(nameof(StartNewRound), 3f);
+            }
         }
         else
         {
-            Debug.Log("=== ALL PLAYERS DIED! ===");
+            int roundReached = networkCurrentRound.Value;
+            Debug.Log($"=== GAME OVER on round {roundReached}! ===");
+            OnRoundEndClientRpc(false, roundReached);
+            // Reset round counter so next run starts at round 1
+            networkCurrentRound.Value = 0;
+            Invoke(nameof(StartNewRound), gameOverDelay);
         }
-
-        OnRoundEndClientRpc(playerWon);
-        Invoke(nameof(StartNewRound), 3f);
     }
 
     [ClientRpc]
-    private void OnRoundEndClientRpc(bool playerWon)
+    private void OnRoundEndClientRpc(bool playerWon, int roundReached)
     {
         if (playerWon)
         {
             if (winPanel != null) winPanel.SetActive(true);
+            if (gameStatusText != null)
+            {
+                if (roundReached >= maxRounds)
+                {
+                    gameStatusText.text = "VICTORY! All rounds survived! Restarting...";
+                    gameStatusText.color = Color.green;
+                }
+                else
+                {
+                    gameStatusText.text = $"Round {roundReached} survived! Next round starting...";
+                    gameStatusText.color = Color.green;
+                }
+            }
         }
         else
         {
             if (losePanel != null) losePanel.SetActive(true);
+            if (gameStatusText != null)
+            {
+                gameStatusText.text = $"GAME OVER — Survived {roundReached} round{(roundReached != 1 ? "s" : "")}. Restarting...";
+                gameStatusText.color = Color.red;
+            }
         }
     }
 

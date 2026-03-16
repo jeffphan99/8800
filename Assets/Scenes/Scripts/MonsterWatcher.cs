@@ -7,20 +7,36 @@ public class MonsterWatcher : MonsterAI
     public float unwatchedSpeedMultiplier = 2f;
     public float watchedSpeedMultiplier = 0.3f;
 
-    [Header("Flashlight Interaction")]
+    [Header("Flashlight Suppression")]
+    public float suppressionDuration = 0.3f;
+    public float suppressionSpeedMultiplier = 0.05f;
+    private float suppressionTimer = 0f;
+    private bool isFlashlightSuppressed = false;
+
+    [Header("Watch Detection")]
     public bool isBeingWatched = false;
-    private float lastFlashlightCheckTime = 0f;
-    public float flashlightCheckInterval = 0.1f;
+    private float lastWatchCheckTime = 0f;
+    public float watchCheckInterval = 0.1f;
 
     protected override void Update()
     {
         // Only server runs AI logic
         if (!IsServer) return;
 
-        if (Time.time >= lastFlashlightCheckTime + flashlightCheckInterval)
+        // Tick suppression timer before base.Update
+        if (isFlashlightSuppressed)
+        {
+            suppressionTimer -= Time.deltaTime;
+            if (suppressionTimer <= 0f)
+            {
+                isFlashlightSuppressed = false;
+            }
+        }
+
+        if (Time.time >= lastWatchCheckTime + watchCheckInterval)
         {
             CheckIfBeingWatched();
-            lastFlashlightCheckTime = Time.time;
+            lastWatchCheckTime = Time.time;
         }
 
         UpdateSpeedBasedOnObservation();
@@ -78,7 +94,12 @@ public class MonsterWatcher : MonsterAI
 
         float baseSpeed = currentState == AIState.Chasing ? chaseSpeed : patrolSpeed;
 
-        if (isBeingWatched)
+        // Priority: flashlight suppressed > being watched > unwatched
+        if (isFlashlightSuppressed)
+        {
+            agent.speed = baseSpeed * suppressionSpeedMultiplier;
+        }
+        else if (isBeingWatched)
         {
             agent.speed = baseSpeed * watchedSpeedMultiplier;
         }
@@ -90,9 +111,12 @@ public class MonsterWatcher : MonsterAI
 
     public override void OnFlashlightShone()
     {
-        base.OnFlashlightShone();
+        if (!isActive) return;
+
+        isFlashlightSuppressed = true;
+        suppressionTimer = suppressionDuration;
         isBeingWatched = true;
-        lastFlashlightCheckTime = Time.time;
+        lastWatchCheckTime = Time.time;
     }
 
     protected override void OnDrawGizmosSelected()

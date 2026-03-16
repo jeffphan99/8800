@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public class MonsterStalker : MonsterAI
@@ -10,9 +11,19 @@ public class MonsterStalker : MonsterAI
     public LayerMask visionBlockingLayers;
 
     [Header("Light Sensitivity")]
-    public float lightCheckRadius = 5f;
+    public float brightLightCheckRadius = 5f;
+    public float brightLightCheckInterval = 0.3f;
+    private float lastBrightLightCheckTime = 0f;
     public bool isEnraged = false;
     private float enrageTimer = 0f;
+
+    [Header("Jukebox Calming")]
+    public float jukeboxCalmRadius = 40f;
+    public float jukeboxCalmSpeedMultiplier = 0.3f;
+    private bool isCalmByMusic = false;
+
+    [Header("Lit Zone Detection")]
+    public float litZoneDetectionRadius = 5f;
 
     protected override void Update()
     {
@@ -30,54 +41,148 @@ public class MonsterStalker : MonsterAI
             }
         }
 
-        CheckForBrightLights();
+        if (Time.time >= lastBrightLightCheckTime + brightLightCheckInterval)
+        {
+            CheckForBrightLights();
+            lastBrightLightCheckTime = Time.time;
+        }
+
+        CheckJukeboxCalming();
+    }
+
+    protected override Transform FindClosestPlayer()
+    {
+        // Stalker ignores jukebox taunt — calmed by music, not lured
+        if (GameManager.Instance == null) return null;
+
+        List<GameObject> players = GameManager.Instance.GetActivePlayers();
+        Transform closest = null;
+        float closestDist = float.MaxValue;
+
+        foreach (var p in players)
+        {
+            if (p == null) continue;
+
+            var health = p.GetComponent<PlayerHealth>();
+            if (health != null && health.GetCurrentHealth() <= 0) continue;
+
+            float dist = Vector3.Distance(transform.position, p.transform.position);
+            if (dist < closestDist)
+            {
+                closestDist = dist;
+                closest = p.transform;
+            }
+        }
+
+        return closest;
     }
 
     protected override bool DetectPlayer()
     {
         if (player == null) return false;
 
-        Vector3 directionToPlayer = player.position - transform.position;
-        float distanceToPlayer = directionToPlayer.magnitude;
+        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
-        if (distanceToPlayer > visionRange)
-            return false;
-
-        float angleToPlayer = Vector3.Angle(transform.forward, directionToPlayer);
-        if (angleToPlayer > visionAngle / 2f)
-            return false;
-
-        Ray ray = new Ray(transform.position + Vector3.up, directionToPlayer);
-        RaycastHit hit;
-
-        if (Physics.Raycast(ray, out hit, distanceToPlayer, visionBlockingLayers))
+        // Vision cone detection (existing behavior)
+        if (distanceToPlayer <= visionRange)
         {
-            return false;
+            Vector3 directionToPlayer = player.position - transform.position;
+            float angleToPlayer = Vector3.Angle(transform.forward, directionToPlayer);
+
+            if (angleToPlayer <= visionAngle / 2f)
+            {
+                Ray ray = new Ray(transform.position + Vector3.up, directionToPlayer);
+                RaycastHit hit;
+
+                if (!Physics.Raycast(ray, out hit, distanceToPlayer, visionBlockingLayers))
+                {
+                    Debug.Log("Stalker: Player spotted in vision cone!");
+                    return true;
+                }
+            }
         }
 
-        Debug.Log("Stalker: Player spotted!");
-        return true;
+        // Lit zone detection — player near a lit light is visible without cone check
+        if (distanceToPlayer <= visionRange)
+        {
+            Collider[] nearPlayer = Physics.OverlapSphere(player.position, litZoneDetectionRadius);
+            foreach (Collider col in nearPlayer)
+            {
+                RoomLight light = col.GetComponent<RoomLight>();
+                if (light != null && light.isOn && !light.isBroken)
+                {
+                    // Player is in a lit zone — check LOS
+                    Vector3 directionToPlayer = player.position - transform.position;
+                    Ray ray = new Ray(transform.position + Vector3.up, directionToPlayer);
+                    RaycastHit hit;
+
+                    if (!Physics.Raycast(ray, out hit, distanceToPlayer, visionBlockingLayers))
+                    {
+                        Debug.Log("Stalker: Player spotted in lit zone!");
+                        return true;
+                    }
+                    break;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    public override void OnFlashlightShone()
+    {
+        if (!isActive) return;
+
+        if (player != null)
+        {
+            lastKnownPlayerPosition = player.position;
+            EnterChaseState();
+            if (!isEnraged) Enrage();
+        }
     }
 
     void CheckForBrightLights()
     {
-        RoomLight[] nearbyLights = FindObjectsOfType<RoomLight>();
-
-        foreach (RoomLight light in nearbyLights)
+        Collider[] nearbyColliders = Physics.OverlapSphere(transform.position, brightLightCheckRadius);
+        foreach (Collider col in nearbyColliders)
         {
-            if (light.isOn && !light.isBroken)
+            RoomLight light = col.GetComponent<RoomLight>();
+            if (light != null && light.isOn && !light.isBroken)
             {
-                float distance = Vector3.Distance(transform.position, light.transform.position);
-
-                if (distance <= lightCheckRadius)
+                if (!isEnraged)
                 {
-                    if (!isEnraged)
-                    {
-                        Enrage();
-                    }
-                    return;
+                    Enrage();
                 }
+                return;
             }
+        }
+    }
+
+    void CheckJukeboxCalming()
+    {
+        bool nearJukebox = false;
+
+        foreach (var jukebox in JukeboxWeapon.ActiveJukeboxes)
+        {
+            if (jukebox == null || !jukebox.IsActive()) continue;
+
+            float dist = Vector3.Distance(transform.position, jukebox.transform.position);
+            if (dist <= jukeboxCalmRadius)
+            {
+                nearJukebox = true;
+                break;
+            }
+        }
+
+        if (nearJukebox && !isCalmByMusic)
+        {
+            isCalmByMusic = true;
+            ApplySpeedModifiers();
+        }
+        else if (!nearJukebox && isCalmByMusic)
+        {
+            isCalmByMusic = false;
+            ApplySpeedModifiers();
         }
     }
 
@@ -85,25 +190,36 @@ public class MonsterStalker : MonsterAI
     {
         isEnraged = true;
         enrageTimer = enrageDuration;
-
-        if (agent != null)
-        {
-            agent.speed = chaseSpeed * enrageSpeedMultiplier;
-        }
-
+        ApplySpeedModifiers();
         Debug.Log("Stalker: ENRAGED by bright light!");
     }
 
     void CalmDown()
     {
         isEnraged = false;
+        ApplySpeedModifiers();
+        Debug.Log("Stalker: Calmed down from enrage");
+    }
 
-        if (agent != null)
+    void ApplySpeedModifiers()
+    {
+        if (agent == null) return;
+
+        float baseSpeed = currentState == AIState.Chasing ? chaseSpeed : patrolSpeed;
+
+        if (isCalmByMusic)
         {
-            agent.speed = currentState == AIState.Chasing ? chaseSpeed : patrolSpeed;
+            // Jukebox calming overrides enrage speed but enrage timer still ticks
+            agent.speed = baseSpeed * jukeboxCalmSpeedMultiplier;
         }
-
-        Debug.Log("Stalker: Calmed down");
+        else if (isEnraged)
+        {
+            agent.speed = chaseSpeed * enrageSpeedMultiplier;
+        }
+        else
+        {
+            agent.speed = baseSpeed;
+        }
     }
 
     protected override void OnDrawGizmosSelected()
@@ -118,5 +234,9 @@ public class MonsterStalker : MonsterAI
         Gizmos.DrawRay(transform.position, leftBoundary);
         Gizmos.DrawRay(transform.position, rightBoundary);
         Gizmos.DrawRay(transform.position, forward);
+
+        // Lit zone radius (shown at current position for reference)
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(transform.position, litZoneDetectionRadius);
     }
 }

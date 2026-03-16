@@ -10,6 +10,7 @@ public class Door : NetworkBehaviour
     public Vector3 openPosition = new Vector3(0, 0, 2);
     public float openSpeed = 3f;
     public bool startsOpen = false;
+    public bool isCellDoor = false;
 
     [Header("Interaction Settings")]
     [Range(1f, 10f)]

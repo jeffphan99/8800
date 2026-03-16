@@ -52,6 +52,11 @@ public class MonsterAI : NetworkBehaviour
     public float lightCheckInterval = 0.5f;
     protected float lastLightCheckTime = 0f;
 
+    [Header("Door Interaction")]
+    public float doorCheckRadius = 2.5f;
+    public float doorCheckInterval = 0.3f;
+    private float lastDoorCheckTime = 0f;
+
     [Header("Flashlight Interaction")]
     public bool affectedByFlashlight = false;
     public float flashlightSlowMultiplier = 0.3f;
@@ -211,7 +216,7 @@ public class MonsterAI : NetworkBehaviour
 
     // Find the closest alive player from GameManager's list.
     // Active jukeboxes within range override normal targeting (taunt).
-    protected Transform FindClosestPlayer()
+    protected virtual Transform FindClosestPlayer()
     {
         if (GameManager.Instance == null) return null;
 
@@ -242,7 +247,7 @@ public class MonsterAI : NetworkBehaviour
         return closest;
     }
 
-    private Transform FindJukeboxTaunt()
+    protected Transform FindJukeboxTaunt()
     {
         Transform closest = null;
         float closestDist = float.MaxValue;
@@ -276,7 +281,7 @@ public class MonsterAI : NetworkBehaviour
             else DeactivateMonster();
         }
 
-        if (isAsleep || !isActive)
+        if (isAsleep || !isActive || isFrozen)
         {
             StopFootsteps();
             if (agent.enabled) agent.isStopped = true;
@@ -285,13 +290,19 @@ public class MonsterAI : NetworkBehaviour
 
         // Update player target each frame (closest alive player)
         player = FindClosestPlayer();
-        if (player == null) return;
 
         // Check for lights to break
         if (Time.time >= lastLightCheckTime + lightCheckInterval)
         {
             CheckForLightsToBreak();
             lastLightCheckTime = Time.time;
+        }
+
+        // Check for doors to open
+        if (Time.time >= lastDoorCheckTime + doorCheckInterval)
+        {
+            CheckForDoorsToOpen();
+            lastDoorCheckTime = Time.time;
         }
 
         // Handle flashlight effect
@@ -306,6 +317,18 @@ public class MonsterAI : NetworkBehaviour
         else
         {
             if (noiseIndicator != null) noiseIndicator.SetActive(false);
+        }
+
+        // If no player target, keep patrolling but skip combat logic
+        if (player == null)
+        {
+            if (useRandomPatrol && !isWaiting && (currentState == AIState.Idle || currentState == AIState.Patrolling))
+            {
+                Patrol();
+            }
+            UpdateFootsteps();
+            UpdateAnimator();
+            return;
         }
 
         float distanceToPlayer = Vector3.Distance(transform.position, player.position);
@@ -381,6 +404,11 @@ public class MonsterAI : NetworkBehaviour
 
     protected void EnterChaseState()
     {
+        if (isWaiting)
+        {
+            StopAllCoroutines();
+            isWaiting = false;
+        }
         currentState = AIState.Chasing;
         agent.speed = chaseSpeed;
         agent.isStopped = false;
@@ -427,7 +455,7 @@ public class MonsterAI : NetworkBehaviour
     {
         if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
         {
-            if (!agent.hasPath || agent.velocity.sqrMagnitude == 0f) return true;
+            if (!agent.hasPath || agent.velocity.sqrMagnitude < 0.01f) return true;
         }
         return false;
     }
@@ -452,6 +480,7 @@ public class MonsterAI : NetworkBehaviour
     protected Vector3 GetRandomNavMeshPoint(Vector3 center, float radius)
     {
         Vector3 randomDirection = Random.insideUnitSphere * radius;
+        randomDirection.y = 0f;
         randomDirection += center;
         NavMeshHit hit;
         if (NavMesh.SamplePosition(randomDirection, out hit, radius, NavMesh.AllAreas))
@@ -577,6 +606,46 @@ public class MonsterAI : NetworkBehaviour
         if (animator != null) animator.SetTrigger("WakeUp");
     }
 
+    public void Freeze(float duration)
+    {
+        if (!IsServer) return;
+        if (!isActive || isFrozen) return;
+        StartCoroutine(FreezeCoroutine(duration));
+    }
+
+    private bool isFrozen = false;
+
+    IEnumerator FreezeCoroutine(float duration)
+    {
+        isFrozen = true;
+        currentState = AIState.Idle;
+        if (agent != null)
+        {
+            agent.velocity = Vector3.zero;
+            agent.isStopped = true;
+        }
+        StopFootsteps();
+
+        // Freeze animator on all clients
+        FreezeAnimatorClientRpc(true);
+
+        yield return new WaitForSeconds(duration);
+
+        isFrozen = false;
+        if (agent != null) agent.isStopped = false;
+        EnterPatrolState();
+
+        // Unfreeze animator on all clients
+        FreezeAnimatorClientRpc(false);
+    }
+
+    [ClientRpc]
+    private void FreezeAnimatorClientRpc(bool frozen)
+    {
+        if (animator != null)
+            animator.speed = frozen ? 0f : 1f;
+    }
+
     public void ActivateMonster()
     {
         if (!IsServer) return;
@@ -596,6 +665,12 @@ public class MonsterAI : NetworkBehaviour
     {
         if (!IsServer) return;
 
+        if (isWaiting)
+        {
+            StopAllCoroutines();
+            isWaiting = false;
+        }
+
         networkIsActive.Value = false;
         isAsleep = false;
         currentState = AIState.Idle;
@@ -611,6 +686,7 @@ public class MonsterAI : NetworkBehaviour
     {
         if (!IsServer) return;
 
+        StopAllCoroutines();
         isAsleep = false;
         lastAttackTime = 0;
         isWaiting = false;
@@ -639,6 +715,20 @@ public class MonsterAI : NetworkBehaviour
             if (light != null && light.isOn && !light.isBroken && light.canBeBroken)
             {
                 light.BreakLight();
+            }
+        }
+    }
+
+    void CheckForDoorsToOpen()
+    {
+        Collider[] nearbyColliders = Physics.OverlapSphere(transform.position, doorCheckRadius);
+        foreach (Collider col in nearbyColliders)
+        {
+            Door door = col.GetComponent<Door>();
+            if (door == null) door = col.GetComponentInParent<Door>();
+            if (door != null && !door.isOpen && !door.isCellDoor)
+            {
+                door.OpenDoor();
             }
         }
     }

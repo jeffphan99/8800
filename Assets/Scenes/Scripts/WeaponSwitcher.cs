@@ -74,8 +74,7 @@ namespace StarterAssets
                 return;
 
             // Don't switch during minigame
-            Terminal activeTerminal = FindObjectOfType<Terminal>();
-            if (activeTerminal != null && activeTerminal.minigameActive)
+            if (Terminal.AnyMinigameActive)
                 return;
 
             // Check for weapon slot input

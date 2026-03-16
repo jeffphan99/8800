@@ -78,25 +78,10 @@ public class IceBlock : MonoBehaviour
     {
         Debug.Log("[IceBlock] ========== SHATTER START ==========");
 
-        if (monsterAnimator != null)
-        {
-            monsterAnimator.speed = 1f;
-        }
+        // Monster freeze/unfreeze is handled server-side by MonsterAI.Freeze()
+        // IceBlock is visual-only — just play shatter sound and destroy
 
-        if (monster != null)
-        {
-            monster.enabled = true;
-
-            UnityEngine.AI.NavMeshAgent agent = monster.GetComponent<UnityEngine.AI.NavMeshAgent>();
-            if (agent != null)
-            {
-                agent.isStopped = false;
-            }
-
-            Debug.Log("[IceBlock] Monster unfrozen and AI re-enabled");
-        }
-
-        if (shatterSound != null && audioSource != null)
+        if (shatterSound != null)
         {
             AudioSource.PlayClipAtPoint(shatterSound, transform.position, 0.5f);
         }

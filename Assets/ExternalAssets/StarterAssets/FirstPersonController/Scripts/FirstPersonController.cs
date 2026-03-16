@@ -131,6 +131,8 @@ namespace StarterAssets
             _controller = GetComponent<CharacterController>();
             _input = GetComponent<StarterAssetsInputs>();
             _animator = GetComponent<Animator>();
+            if (_animator == null)
+                _animator = GetComponentInChildren<Animator>();
 #if ENABLE_INPUT_SYSTEM
 			_playerInput = GetComponent<PlayerInput>();
 #else

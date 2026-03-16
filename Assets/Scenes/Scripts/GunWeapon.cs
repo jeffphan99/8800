@@ -74,8 +74,7 @@ public class FreezeGunWeapon : WeaponBase
         if (!gameObject.activeInHierarchy) return;
 
         // Don't shoot if minigame active
-        Terminal activeTerminal = FindObjectOfType<Terminal>();
-        if (activeTerminal != null && activeTerminal.minigameActive)
+        if (Terminal.AnyMinigameActive)
             return;
 
         if (isReloading)
@@ -205,62 +204,33 @@ public class FreezeGunWeapon : WeaponBase
 
     void FreezeMonster(MonsterAI monster, Vector3 hitPosition)
     {
-
-        Animator monsterAnimator = monster.GetComponent<Animator>();
-        if (monsterAnimator != null)
+        // Use network helper to freeze monster server-side and show ice block on all clients
+        FreezeGunNetwork netHelper = GetComponentInParent<FreezeGunNetwork>();
+        if (netHelper == null)
         {
-            monsterAnimator.speed = 0f;
+            Debug.LogError("[FreezeGun] FreezeGunNetwork component not found on parent!");
+            return;
         }
 
-        UnityEngine.AI.NavMeshAgent agent = monster.GetComponent<UnityEngine.AI.NavMeshAgent>();
-        if (agent != null)
+        var netObj = monster.GetComponent<Unity.Netcode.NetworkObject>();
+        if (netObj == null)
         {
-            agent.velocity = Vector3.zero; // Kill current momentum
-            agent.isStopped = true;        // Stop pathfinding
-        }
-        if (monster != null)
-        {
-            monster.enabled = false;
+            Debug.LogError("[FreezeGun] Monster has no NetworkObject!");
+            return;
         }
 
-        Debug.Log($"[FreezeGun] Completely froze {monster.gameObject.name}");
-
-        CreateIceBlock(monster, monsterAnimator);
-    }
-
-
-    void CreateIceBlock(MonsterAI monster, Animator monsterAnimator)
-    {
-        GameObject iceBlock = null; // Initialize to null
-
-        // Calculate spawn position with offset
         Vector3 spawnPosition = monster.transform.position + iceBlockOffset;
 
-        if (iceBlockPrefab != null)
-        {
-            // 1. Instantiate the block
-            iceBlock = Instantiate(iceBlockPrefab, spawnPosition, Quaternion.identity);
+        netHelper.RequestFreezeServerRpc(
+            netObj.NetworkObjectId,
+            freezeDuration,
+            spawnPosition,
+            iceBlockSize,
+            thawStartTime,
+            shakeIntensity
+        );
 
-            // 2. GET THE COMPONENT
-            IceBlock blockScript = iceBlock.GetComponent<IceBlock>();
-
-            // 3. PASS THE DATA
-            if (blockScript != null)
-            {
-                blockScript.monster = monster;               // Pass the monster reference
-                blockScript.monsterAnimator = monsterAnimator; // Pass the animator reference
-                blockScript.duration = freezeDuration;       // Sync duration settings
-                blockScript.thawStartTime = thawStartTime;   // Sync thaw settings
-                blockScript.shakeIntensity = shakeIntensity;
-                blockScript.shatterSound = iceShatterSound;  // Pass audio clip if needed
-            }
-            else
-            {
-                Debug.LogError("The IceBlock Prefab does not have the IceBlock script attached!");
-            }
-        }
-
-        Debug.Log($"Ice block created around {monster.gameObject.name}");
+        Debug.Log($"[FreezeGun] Requested freeze on {monster.gameObject.name}");
     }
 
     IEnumerator ShowFreezeBeam(Vector3 start, Vector3 end)

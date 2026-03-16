@@ -61,8 +61,7 @@ public class JukeboxWeapon : WeaponBase
         if (!gameObject.activeInHierarchy) return;
 
         // Don't toggle during minigame
-        Terminal activeTerminal = FindObjectOfType<Terminal>();
-        if (activeTerminal != null && activeTerminal.minigameActive)
+        if (Terminal.AnyMinigameActive)
             return;
 
         // Toggle on click (with minimum activation time)

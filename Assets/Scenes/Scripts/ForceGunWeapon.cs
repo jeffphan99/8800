@@ -63,8 +63,7 @@ public class ForceGunWeapon : WeaponBase
         if (!gameObject.activeInHierarchy) return;
 
         // Don't fire during minigame
-        Terminal activeTerminal = FindObjectOfType<Terminal>();
-        if (activeTerminal != null && activeTerminal.minigameActive)
+        if (Terminal.AnyMinigameActive)
             return;
 
         // Hold left click to charge

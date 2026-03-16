@@ -53,7 +53,7 @@ public class Interactable : MonoBehaviour
             FindLocalPlayer();
         }
 
-        if (player == null || GameManager.Instance != null && !GameManager.Instance.IsRoundActive()) return;
+        if (player == null || (GameManager.Instance != null && !GameManager.Instance.IsRoundActive())) return;
 
 
         float distance = Vector3.Distance(transform.position, player.position);

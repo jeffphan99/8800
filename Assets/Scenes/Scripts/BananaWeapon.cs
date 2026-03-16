@@ -62,8 +62,7 @@ public class BananaWeapon : WeaponBase
         }
 
         // Don't use if minigame active
-        Terminal activeTerminal = FindObjectOfType<Terminal>();
-        if (activeTerminal != null && activeTerminal.minigameActive)
+        if (Terminal.AnyMinigameActive)
             return;
 
         // Eat banana with left click

@@ -51,7 +51,9 @@ public class RoomLight : MonoBehaviour
 
         if (lightSource == null)
         {
-            Debug.LogError($"[RoomLight] CRITICAL: No Light component found on {gameObject.name} or its children!");
+            Debug.LogError($"[RoomLight] CRITICAL: No Light component found on {gameObject.name} or its children! Disabling RoomLight.");
+            enabled = false;
+            return;
         }
         else
         {

@@ -7,6 +7,9 @@ using StarterAssets;
 
 public class Terminal : NetworkBehaviour
 {
+    // Static helper so weapons can check without FindObjectOfType every frame
+    public static bool AnyMinigameActive { get; private set; }
+
     [Header("Minigame Settings")]
     public int sequenceLength = 8;
     public GameObject minigameUI;
@@ -29,6 +32,10 @@ public class Terminal : NetworkBehaviour
 
     // Local shortcut
     public bool isBroken => networkIsBroken.Value;
+
+    [Header("Repair Lock")]
+    public float repairLockTimeout = 30f;
+    private float repairLockTime = 0f;
 
     private KeyCode[] possibleKeys = { KeyCode.W, KeyCode.A, KeyCode.S, KeyCode.D };
 
@@ -96,6 +103,7 @@ public class Terminal : NetworkBehaviour
     public override void OnNetworkDespawn()
     {
         networkIsBroken.OnValueChanged -= OnBrokenStateChanged;
+        CancelInvoke();
     }
 
     private void OnBrokenStateChanged(bool previousValue, bool newValue)
@@ -200,6 +208,7 @@ public class Terminal : NetworkBehaviour
 
         // Grant the lock
         repairingPlayerId.Value = clientId;
+        repairLockTime = Time.time;
         RepairLockGrantedClientRpc(clientId);
     }
 
@@ -233,6 +242,7 @@ public class Terminal : NetworkBehaviour
 
         ShowUI();
         minigameActive = true;
+        AnyMinigameActive = true;
         currentIndex = 0;
 
         // Generate random sequence
@@ -307,6 +317,16 @@ public class Terminal : NetworkBehaviour
 
     void Update()
     {
+        // Server: timeout stale repair locks (player disconnected mid-repair)
+        if (IsServer && repairingPlayerId.Value != ulong.MaxValue)
+        {
+            if (Time.time > repairLockTime + repairLockTimeout)
+            {
+                Debug.Log($"[Terminal] Repair lock timed out for client {repairingPlayerId.Value}");
+                repairingPlayerId.Value = ulong.MaxValue;
+            }
+        }
+
         if (!minigameActive) return;
 
         foreach (KeyCode key in possibleKeys)
@@ -411,7 +431,7 @@ public class Terminal : NetworkBehaviour
                 if (roleCtrl != null && roleCtrl.Role != AssignedRole)
                 {
                     int currentRound = GameManager.Instance != null ? GameManager.Instance.CurrentRound : 1;
-                    float failureChance = 0.15f * currentRound;
+                    float failureChance = Mathf.Min(0.95f, 0.15f * currentRound);
                     if (Random.value < failureChance)
                     {
                         Debug.Log($"[Terminal] Role mismatch failure! Player role={roleCtrl.Role}, terminal role={AssignedRole}, chance={failureChance}");
@@ -446,6 +466,7 @@ public class Terminal : NetworkBehaviour
     void CloseMinigame()
     {
         minigameActive = false;
+        AnyMinigameActive = false;
         HideUI();
 
         // Clear failure risk text

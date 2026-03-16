@@ -64,8 +64,7 @@ public class FlashlightWeapon : WeaponBase
         if (_input == null) return;
 
         // Don't use if minigame active
-        Terminal activeTerminal = FindObjectOfType<Terminal>();
-        if (activeTerminal != null && activeTerminal.minigameActive)
+        if (Terminal.AnyMinigameActive)
             return;
 
         // Toggle with primary action (left click)

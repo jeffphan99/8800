@@ -110,6 +110,15 @@ public class PlayerHealth : NetworkBehaviour
                 continue;
             vcam.Follow = cameraRoot;
             Debug.Log($"[PlayerHealth] Set Cinemachine Follow to {cameraRoot.name}");
+
+            // Set up arms camera on the main camera
+            var armsSetup = GetComponent<ArmsCameraSetup>();
+            if (armsSetup != null)
+            {
+                Camera mainCam = Camera.main;
+                if (mainCam != null) armsSetup.SetupArmsCamera(mainCam);
+            }
+
             return true;
         }
         return false;
