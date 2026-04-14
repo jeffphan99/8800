@@ -1,4 +1,5 @@
 using UnityEngine;
+using Unity.Netcode;
 
 public class MonsterWatcher : MonsterAI
 {
@@ -8,8 +9,8 @@ public class MonsterWatcher : MonsterAI
     public float watchedSpeedMultiplier = 0.3f;
 
     [Header("Flashlight Suppression")]
-    public float suppressionDuration = 0.3f;
-    public float suppressionSpeedMultiplier = 0.05f;
+    public float suppressionDuration = 1.5f;
+    public float suppressionSpeedMultiplier = 0.2f;
     private float suppressionTimer = 0f;
     private bool isFlashlightSuppressed = false;
 
@@ -20,28 +21,41 @@ public class MonsterWatcher : MonsterAI
 
     protected override void Update()
     {
-        // Only server runs AI logic
-        if (!IsServer) return;
+        // All clients run the local watch check and report to server
+        if (!IsServer)
+        {
+            if (Time.time >= lastWatchCheckTime + watchCheckInterval)
+            {
+                ReportWatchStateServerRpc(CheckIfBeingWatchedLocal());
+                lastWatchCheckTime = Time.time;
+            }
+            return;
+        }
 
         // Tick suppression timer before base.Update
         if (isFlashlightSuppressed)
         {
             suppressionTimer -= Time.deltaTime;
             if (suppressionTimer <= 0f)
-            {
                 isFlashlightSuppressed = false;
-            }
         }
 
+        // Reset each interval — clients will set it back to true via RPC if watching
         if (Time.time >= lastWatchCheckTime + watchCheckInterval)
         {
-            CheckIfBeingWatched();
+            isBeingWatched = CheckIfBeingWatchedLocal();
             lastWatchCheckTime = Time.time;
         }
 
         UpdateSpeedBasedOnObservation();
-
         base.Update();
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    private void ReportWatchStateServerRpc(bool watching)
+    {
+        if (watching) isBeingWatched = true;
+        // isBeingWatched resets to false each tick in CheckIfBeingWatchedLocal on server
     }
 
     protected override bool DetectPlayer()
@@ -59,12 +73,10 @@ public class MonsterWatcher : MonsterAI
         return false;
     }
 
-    void CheckIfBeingWatched()
+    bool CheckIfBeingWatchedLocal()
     {
-        if (player == null) return;
-
         Camera playerCamera = Camera.main;
-        if (playerCamera == null) return;
+        if (playerCamera == null) return false;
 
         Vector3 directionToMonster = transform.position - playerCamera.transform.position;
         float angleToMonster = Vector3.Angle(playerCamera.transform.forward, directionToMonster);
@@ -72,20 +84,14 @@ public class MonsterWatcher : MonsterAI
         if (angleToMonster < 30f)
         {
             Ray ray = new Ray(playerCamera.transform.position, directionToMonster);
-            RaycastHit hit;
-
-            if (Physics.Raycast(ray, out hit))
+            if (Physics.Raycast(ray, out RaycastHit hit))
             {
                 MonsterWatcher hitWatcher = hit.collider.GetComponentInParent<MonsterWatcher>();
-                if (hitWatcher == this)
-                {
-                    isBeingWatched = true;
-                    return;
-                }
+                if (hitWatcher == this) return true;
             }
         }
 
-        isBeingWatched = false;
+        return false;
     }
 
     void UpdateSpeedBasedOnObservation()

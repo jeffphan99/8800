@@ -22,8 +22,8 @@ public class MonsterAI : NetworkBehaviour
     private float noiseIndicatorTimer = 0f;
 
     [Header("Patrol Settings")]
-    public float patrolSpeed = 2f;
-    public float chaseSpeed = 4f;
+    public float patrolSpeed = 1.6f;
+    public float chaseSpeed = 3.2f;
     public float patrolRadius = 60f;
     public float waitTimeAtDestination = 2f;
     public bool useRandomPatrol = true;
@@ -33,7 +33,7 @@ public class MonsterAI : NetworkBehaviour
     public LayerMask noiseSourceLayer;
 
     [Header("Sleep Settings")]
-    public float sleepLayDownSpeed = 2f;
+    public float getUpDuration = 1.5f;
 
     [Header("Spawn Settings")]
     public Transform spawnPoint;
@@ -83,6 +83,13 @@ public class MonsterAI : NetworkBehaviour
     protected AIState currentState = AIState.Idle;
     protected bool isWaiting = false;
     protected Vector3 lastKnownPlayerPosition;
+    private Vector3 lastSetDestination = Vector3.zero;
+    private float lastPathUpdateTime = 0f;
+
+    // Stuck detection
+    private float stuckTimer = 0f;
+    private Vector3 stuckCheckPosition;
+    private bool isUnstucking = false;
 
     protected AudioSource footstepAudioSource;
     protected AudioSource effectAudioSource;
@@ -103,6 +110,22 @@ public class MonsterAI : NetworkBehaviour
             originalPosition = spawnPoint.position;
             originalRotation = spawnPoint.rotation;
         }
+
+        agent = GetComponent<NavMeshAgent>();
+        agent.speed = patrolSpeed;
+        agent.stoppingDistance = attackRange * 0.8f;
+
+        // Keep the Rigidbody kinematic at all times while NavMeshAgent drives movement.
+        // A non-kinematic Rigidbody fights NavMesh and accumulates bad state when the
+        // player collides with the monster, causing compounding spin/erratic movement.
+        var rb = GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            rb.isKinematic = true;
+            rb.freezeRotation = true;
+        }
+
+        animator = GetComponent<Animator>();
 
         SetupAudio();
 
@@ -129,27 +152,6 @@ public class MonsterAI : NetworkBehaviour
         effectAudioSource.maxDistance = 25f;
     }
 
-    void OnStartServer()
-    {
-        agent = GetComponent<NavMeshAgent>();
-        agent.speed = patrolSpeed;
-        agent.stoppingDistance = attackRange * 0.8f;
-
-        if (spawnPoint == null) spawnPoint = transform;
-        originalPosition = spawnPoint.position;
-        originalRotation = spawnPoint.rotation;
-
-        animator = GetComponent<Animator>();
-
-        if (noiseIndicator != null) noiseIndicator.SetActive(false);
-        if (lightEffectIndicator != null) lightEffectIndicator.SetActive(false);
-
-        // Clients don't run NavMeshAgent
-        if (!IsServer)
-        {
-            agent.enabled = false;
-        }
-    }
 
     public override void OnNetworkSpawn()
     {
@@ -271,15 +273,12 @@ public class MonsterAI : NetworkBehaviour
 
     protected virtual void Update()
     {
-        // Only server runs AI logic
         if (!IsServer) return;
 
-        // Debug Toggle Logic
-        if (debugToggleActive != isActive)
-        {
-            if (debugToggleActive) ActivateMonster();
-            else DeactivateMonster();
-        }
+        // Debug toggle: activate monster whenever the checkbox is on and it isn't active yet.
+        // Does NOT deactivate — so it never fights a terminal-triggered release.
+        if (debugToggleActive && !isActive)
+            ActivateMonster();
 
         if (isAsleep || !isActive || isFrozen)
         {
@@ -355,14 +354,11 @@ public class MonsterAI : NetworkBehaviour
                 break;
 
             case AIState.Chasing:
+                CheckStuckState();
                 ChasePlayer();
                 if (distanceToPlayer <= attackRange)
                 {
                     EnterAttackState();
-                }
-                else if (distanceToPlayer > detectionRange * 2f && !HasReachedDestination())
-                {
-                    // Keep chasing
                 }
                 else if (distanceToPlayer > detectionRange * 2f && HasReachedDestination())
                 {
@@ -412,6 +408,7 @@ public class MonsterAI : NetworkBehaviour
         currentState = AIState.Chasing;
         agent.speed = chaseSpeed;
         agent.isStopped = false;
+        isUnstucking = false;
         lastKnownPlayerPosition = player.position;
     }
 
@@ -492,14 +489,30 @@ public class MonsterAI : NetworkBehaviour
 
     void ChasePlayer()
     {
+        Vector3 target = player != null ? player.position : lastKnownPlayerPosition;
+
         if (player != null)
-        {
             lastKnownPlayerPosition = player.position;
-            agent.SetDestination(player.position);
-        }
-        else
+
+        // Already close enough — no need to keep pathing
+        if (Vector3.Distance(transform.position, target) <= agent.stoppingDistance + 0.1f)
+            return;
+
+        bool targetMoved = Vector3.Distance(target, lastSetDestination) > 0.5f;
+
+        // When the path is partial (stuck against geometry), rate-limit recalculation to avoid
+        // rapid micro-lurches in random directions as each new partial path resolves differently.
+        bool pathIsClean = agent.pathStatus == NavMeshPathStatus.PathComplete;
+        float retryInterval = pathIsClean ? 0f : 1.5f;
+        bool allowUpdate = Time.time >= lastPathUpdateTime + retryInterval;
+
+        if (targetMoved && allowUpdate)
         {
-            agent.SetDestination(lastKnownPlayerPosition);
+            // Flatten Y so we don't send the agent up/down toward the player's exact Y
+            Vector3 flatTarget = new Vector3(target.x, transform.position.y, target.z);
+            agent.SetDestination(flatTarget);
+            lastSetDestination = target;
+            lastPathUpdateTime = Time.time;
         }
     }
 
@@ -511,7 +524,11 @@ public class MonsterAI : NetworkBehaviour
 
     protected void UpdateAnimator()
     {
-        if (animator != null) animator.SetBool("Run", agent.velocity.magnitude > 0.1f);
+        if (animator == null) return;
+        // agent.velocity lags by one physics step after SetDestination, causing idle-gliding
+        // at chase start. desiredVelocity updates immediately when a path is assigned.
+        bool shouldRun = agent.velocity.magnitude > 0.1f || agent.desiredVelocity.magnitude > 0.1f;
+        animator.SetBool("Run", shouldRun);
     }
 
     void PlayFootsteps()
@@ -538,13 +555,6 @@ public class MonsterAI : NetworkBehaviour
         Debug.Log("Monster attacks player");
         StopFootsteps();
 
-        if (player != null)
-        {
-            Vector3 lookPos = player.position - transform.position;
-            lookPos.y = 0;
-            transform.rotation = Quaternion.LookRotation(lookPos);
-        }
-
         if (animator != null) animator.SetTrigger("Attack");
 
         if (player == null) return;
@@ -554,6 +564,85 @@ public class MonsterAI : NetworkBehaviour
         {
             playerHealth.TakeDamageServerRpc(attackDamage);
         }
+    }
+
+    // Detects when the monster is stuck and navigates to a flanking position.
+    // On recovery, eases speed back up to avoid the launch-from-stop jerk.
+    void CheckStuckState()
+    {
+        stuckTimer += Time.deltaTime;
+        if (stuckTimer < 1.2f) return;
+
+        float moved = Vector3.Distance(transform.position, stuckCheckPosition);
+        stuckCheckPosition = transform.position;
+        stuckTimer = 0f;
+
+        if (isUnstucking)
+        {
+            if (moved >= 0.4f)
+            {
+                // Moving freely again — restore full chase speed
+                agent.speed = chaseSpeed;
+                isUnstucking = false;
+            }
+            else if (player != null)
+            {
+                // Still stuck after the flank attempt — try another position
+                TryFlankPlayer();
+            }
+            return;
+        }
+
+        if (moved < 0.4f && player != null)
+            TryFlankPlayer();
+    }
+
+    void TryFlankPlayer()
+    {
+        Vector3 flankPos = FindReachablePositionNearTarget(player.position);
+        if (flankPos == Vector3.zero) return;
+
+        agent.velocity = Vector3.zero; // clear residual momentum from fighting geometry
+        agent.speed = patrolSpeed;     // ease out at walk speed instead of launching
+        isUnstucking = true;
+        agent.SetDestination(flankPos);
+        lastSetDestination = player.position;
+        lastPathUpdateTime = Time.time;
+    }
+
+    // Finds the nearest NavMesh position around targetPos that this agent can reach
+    // via a complete (not partial) path. Used to route around blocking geometry.
+    Vector3 FindReachablePositionNearTarget(Vector3 targetPos)
+    {
+        NavMeshPath path = new NavMeshPath();
+        float[] radii = { 1.5f, 2.5f, 3.5f, 5f };
+
+        foreach (float radius in radii)
+        {
+            Vector3 bestPos = Vector3.zero;
+            float bestDist = float.MaxValue;
+
+            for (int i = 0; i < 8; i++)
+            {
+                float angle = i * 45f;
+                Vector3 dir = Quaternion.Euler(0, angle, 0) * Vector3.forward;
+                Vector3 candidate = targetPos + dir * radius;
+
+                NavMeshHit hit;
+                if (!NavMesh.SamplePosition(candidate, out hit, 1.5f, NavMesh.AllAreas)) continue;
+
+                path.ClearCorners();
+                if (agent.CalculatePath(hit.position, path) && path.status == NavMeshPathStatus.PathComplete)
+                {
+                    float dist = Vector3.Distance(hit.position, targetPos);
+                    if (dist < bestDist) { bestDist = dist; bestPos = hit.position; }
+                }
+            }
+
+            if (bestPos != Vector3.zero) return bestPos;
+        }
+
+        return Vector3.zero;
     }
 
     public void Sleep(float duration)
@@ -566,44 +655,28 @@ public class MonsterAI : NetworkBehaviour
     {
         isAsleep = true;
         currentState = AIState.Idle;
+
+        agent.ResetPath();
         agent.isStopped = true;
         StopFootsteps();
 
-        if (animator != null) animator.SetTrigger("Sleep");
-
-        Quaternion sleepRotation = Quaternion.Euler(90f, transform.eulerAngles.y, transform.eulerAngles.z);
-        float elapsed = 0f;
-
-        while (elapsed < sleepLayDownSpeed)
-        {
-            transform.rotation = Quaternion.Slerp(transform.rotation, sleepRotation, elapsed / sleepLayDownSpeed);
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        transform.rotation = sleepRotation;
+        // Kinematic prevents Rigidbody from rolling while stopped
+        var rb = GetComponent<Rigidbody>();
+        if (rb != null) rb.isKinematic = true;
 
         if (noiseIndicator != null) noiseIndicator.SetActive(false);
         if (lightEffectIndicator != null) lightEffectIndicator.SetActive(false);
 
+        if (animator != null) animator.SetTrigger("Sleep");
         yield return new WaitForSeconds(duration);
 
         if (wakeUpSound != null) effectAudioSource.PlayOneShot(wakeUpSound, wakeUpVolume);
+        if (animator != null) animator.SetTrigger("WakeUp");
+        yield return new WaitForSeconds(getUpDuration);
 
-        elapsed = 0f;
-        while (elapsed < sleepLayDownSpeed)
-        {
-            transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(0, transform.eulerAngles.y, 0), elapsed / sleepLayDownSpeed);
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        transform.rotation = Quaternion.Euler(0, transform.eulerAngles.y, 0);
         isAsleep = false;
         agent.isStopped = false;
         EnterPatrolState();
-
-        if (animator != null) animator.SetTrigger("WakeUp");
     }
 
     public void Freeze(float duration)

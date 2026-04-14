@@ -564,7 +564,7 @@ MonoBehaviour:
   playerTripDuration: 2
   peelLifetime: 30
   armingDelay: 0.5
-  slipSound: {fileID: 0}
+  slipSound: {fileID: 8300000, guid: 2272238a7eeb3db4185e0dd32eeebc88, type: 3}
 --- !u!1 &3083612141048756444
 GameObject:
   m_ObjectHideFlags: 0

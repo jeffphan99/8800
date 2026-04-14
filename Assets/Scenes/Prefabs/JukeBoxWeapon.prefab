@@ -150,7 +150,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f0ec1bf2b658f9744a9ac8e460523dfd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxBattery: 10
+  maxBattery: 20
   aggroRadius: 40
   minActivationTime: 1
   musicSource: {fileID: 0}

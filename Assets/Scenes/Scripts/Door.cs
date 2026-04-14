@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.AI;
 
 public class Door : NetworkBehaviour
 {
@@ -12,11 +13,21 @@ public class Door : NetworkBehaviour
     public bool startsOpen = false;
     public bool isCellDoor = false;
 
+    [Header("Cell Door Settings")]
+    [Tooltip("Radius to search for monsters to awaken when opened, and to check all doors are closed when closing")]
+    public float monsterAwakenRadius = 10f;
+
     [Header("Interaction Settings")]
     [Range(1f, 10f)]
     public float interactDistance = 3f;
 
+    [Header("Audio")]
+    public AudioClip openSound;
+    public AudioClip closeSound;
+    private AudioSource audioSource;
+
     private Vector3 closedPosition;
+    private NavMeshObstacle navObstacle;
 
     // Networked open state
     private NetworkVariable<bool> networkIsOpen = new NetworkVariable<bool>(
@@ -34,6 +45,14 @@ public class Door : NetworkBehaviour
         }
 
         closedPosition = doorTransform.localPosition;
+
+        audioSource = gameObject.AddComponent<AudioSource>();
+        audioSource.spatialBlend = 1f;
+        audioSource.maxDistance = 10f;
+        audioSource.rolloffMode = AudioRolloffMode.Linear;
+        audioSource.playOnAwake = false;
+
+        navObstacle = doorTransform.GetComponent<NavMeshObstacle>();
     }
 
     void Start()
@@ -73,6 +92,53 @@ public class Door : NetworkBehaviour
         if (!isMoving)
         {
             StartCoroutine(AnimateDoor(newValue));
+        }
+
+        if (IsServer && isCellDoor)
+        {
+            if (newValue)
+                AwakenNearbyMonsters();
+            else
+                TryRecontainMonster();
+        }
+    }
+
+    private void AwakenNearbyMonsters()
+    {
+        Collider[] nearby = Physics.OverlapSphere(transform.position, monsterAwakenRadius);
+        foreach (Collider col in nearby)
+        {
+            MonsterAI monster = col.GetComponentInParent<MonsterAI>();
+            if (monster != null && !monster.isActive)
+            {
+                monster.ActivateMonster();
+                Debug.Log($"[Door] Cell door opened — awakened {monster.gameObject.name}");
+            }
+        }
+    }
+
+    private void TryRecontainMonster()
+    {
+        Collider[] nearby = Physics.OverlapSphere(transform.position, monsterAwakenRadius);
+
+        // If any cell door in range is still open, don't recontain yet
+        foreach (Collider col in nearby)
+        {
+            Door door = col.GetComponent<Door>() ?? col.GetComponentInParent<Door>();
+            if (door != null && door != this && door.isCellDoor && door.isOpen)
+                return;
+        }
+
+        // All cell doors in range are closed — deactivate nearby monsters
+        foreach (Collider col in nearby)
+        {
+            MonsterAI monster = col.GetComponentInParent<MonsterAI>();
+            if (monster != null && monster.isActive)
+            {
+                monster.DeactivateMonster();
+                monster.ResetMonster();
+                Debug.Log($"[Door] All cell doors closed — recontained {monster.gameObject.name}");
+            }
         }
     }
 
@@ -180,6 +246,11 @@ public class Door : NetworkBehaviour
     IEnumerator AnimateDoor(bool open)
     {
         isMoving = true;
+
+        AudioClip clip = open ? openSound : closeSound;
+        if (audioSource != null && clip != null)
+            audioSource.PlayOneShot(clip);
+
         Vector3 targetPosition = open ? closedPosition + openPosition : closedPosition;
 
         while (Vector3.Distance(doorTransform.localPosition, targetPosition) > 0.01f)
@@ -194,5 +265,10 @@ public class Door : NetworkBehaviour
 
         doorTransform.localPosition = targetPosition;
         isMoving = false;
+
+        // Closed = obstacle carves into navmesh, blocking pathing through it
+        // Open = no carving so monster can path through the doorway freely
+        if (navObstacle != null)
+            navObstacle.carving = !open;
     }
 }

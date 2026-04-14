@@ -152,6 +152,7 @@ GameObject:
   - component: {fileID: 3767779824951156427}
   - component: {fileID: 2800966411388447769}
   - component: {fileID: 1159264707932382035}
+  - component: {fileID: -5643881148482247859}
   - component: {fileID: 4806914450369761362}
   - component: {fileID: 5981178158308976272}
   m_Layer: 0
@@ -265,6 +266,7 @@ MonoBehaviour:
   interactionRange: 20
   interactionUI: {fileID: 0}
   promptText: {fileID: 0}
+  interactSound: {fileID: 0}
   onInteract:
     m_PersistentCalls:
       m_Calls:
@@ -304,6 +306,27 @@ MonoBehaviour:
           m_StringArgument: 
           m_BoolArgument: 0
         m_CallState: 2
+--- !u!114 &-5643881148482247859
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5687225799806513638}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 921662322
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
 --- !u!114 &4806914450369761362
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -320,6 +343,10 @@ MonoBehaviour:
   openPosition: {x: 0, y: -2.6, z: 0}
   openSpeed: 3
   startsOpen: 0
+  isCellDoor: 0
+  interactDistance: 3
+  openSound: {fileID: 8300000, guid: e6bd45794882efa45bf2a4111f337301, type: 3}
+  closeSound: {fileID: 8300000, guid: e6bd45794882efa45bf2a4111f337301, type: 3}
 --- !u!65 &5981178158308976272
 BoxCollider:
   m_ObjectHideFlags: 0

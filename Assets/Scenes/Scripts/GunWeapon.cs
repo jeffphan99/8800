@@ -108,6 +108,7 @@ public class FreezeGunWeapon : WeaponBase
 
         currentAmmo--;
         UpdateStatusUI();
+        TriggerShootAnim();
         Debug.Log($"Freeze shot fired! Ammo: {currentAmmo}/{maxAmmo}");
 
         // Play shoot sound

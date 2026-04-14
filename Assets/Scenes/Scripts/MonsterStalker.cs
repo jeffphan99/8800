@@ -48,6 +48,11 @@ public class MonsterStalker : MonsterAI
         }
 
         CheckJukeboxCalming();
+
+        // Base class EnterPatrolState/EnterChaseState reset agent.speed directly,
+        // overwriting enrage/calm multipliers. Reapply every frame to keep modifiers active.
+        if (isActive && !isFrozen)
+            ApplySpeedModifiers();
     }
 
     protected override Transform FindClosestPlayer()

@@ -118,6 +118,7 @@ public class ForceGunWeapon : WeaponBase
     {
         isCharging = false;
         currentUses--;
+        TriggerShootAnim();
 
         // Stop charge sound
         if (audioSource != null && audioSource.isPlaying)

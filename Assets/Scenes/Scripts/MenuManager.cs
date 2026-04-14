@@ -22,10 +22,27 @@ public class MenuManager : MonoBehaviour
     public Button startGameButton;
     public Button backButton;
 
+    [Header("Audio")]
+    public AudioClip menuMusic;
+    public AudioClip buttonClickSound;
+    public AudioClip connectSound;
+    private AudioSource audioSource;
+
     void Start()
     {
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+
+        audioSource = gameObject.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
+
+        if (menuMusic != null)
+        {
+            audioSource.clip = menuMusic;
+            audioSource.loop = true;
+            audioSource.volume = 0.5f;
+            audioSource.Play();
+        }
 
         hostButton.onClick.AddListener(OnHostClicked);
         joinButton.onClick.AddListener(OnJoinClicked);
@@ -70,11 +87,14 @@ public class MenuManager : MonoBehaviour
 
     // ── Button Callbacks ─────────────────────────────────────────
 
+    private void PlayClick() { if (audioSource != null && buttonClickSound != null) audioSource.PlayOneShot(buttonClickSound); }
+
     public void OnHostClicked()
     {
         var nm = NetworkManager.Singleton;
         if (nm == null) return;
 
+        if (audioSource != null && connectSound != null) audioSource.PlayOneShot(connectSound);
         SetTransport(nm, "0.0.0.0");
         nm.OnClientConnectedCallback += OnClientConnected;
         nm.OnClientDisconnectCallback += OnClientDisconnected;
@@ -87,6 +107,7 @@ public class MenuManager : MonoBehaviour
         var nm = NetworkManager.Singleton;
         if (nm == null) return;
 
+        if (audioSource != null && connectSound != null) audioSource.PlayOneShot(connectSound);
         SetTransport(nm, serverIP);
         nm.OnClientConnectedCallback += OnClientConnected;
         nm.OnClientDisconnectCallback += OnClientDisconnected;
@@ -99,11 +120,13 @@ public class MenuManager : MonoBehaviour
         var nm = NetworkManager.Singleton;
         if (nm == null || !nm.IsHost) return;
 
+        PlayClick();
         nm.SceneManager.LoadScene("Main", UnityEngine.SceneManagement.LoadSceneMode.Single);
     }
 
     public void OnBackClicked()
     {
+        PlayClick();
         var nm = NetworkManager.Singleton;
         if (nm != null && (nm.IsClient || nm.IsServer))
         {
@@ -116,6 +139,7 @@ public class MenuManager : MonoBehaviour
 
     public void OnQuitClicked()
     {
+        PlayClick();
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false;
 #else
@@ -158,9 +182,9 @@ public class MenuManager : MonoBehaviour
         if (nm.IsServer)
         {
             int count = nm.ConnectedClients.Count;
-            playerCountText.text = $"Players: {count}/2";
-            statusText.text = count >= 2 ? "All players connected!" : "Waiting for players...";
-            statusText.color = count >= 2 ? Color.green : Color.gray;
+            playerCountText.text = $"Players: {count}/3";
+            statusText.text = count >= 3 ? "All players connected!" : "Waiting for players...";
+            statusText.color = count >= 3 ? Color.green : Color.gray;
         }
         else if (nm.IsClient)
         {

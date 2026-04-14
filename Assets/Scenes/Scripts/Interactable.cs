@@ -15,6 +15,10 @@ public class Interactable : MonoBehaviour
     public GameObject interactionUI;
     public Text promptText;
 
+    [Header("Audio")]
+    public AudioClip interactSound;
+    private AudioSource audioSource;
+
     [Header("Events")]
     public UnityEvent onInteract;
 
@@ -33,6 +37,12 @@ public class Interactable : MonoBehaviour
         {
             promptText.text = interactionPrompt;
         }
+
+        audioSource = gameObject.AddComponent<AudioSource>();
+        audioSource.spatialBlend = 1f;
+        audioSource.maxDistance = 8f;
+        audioSource.rolloffMode = AudioRolloffMode.Linear;
+        audioSource.playOnAwake = false;
     }
 
     void FindLocalPlayer()
@@ -85,6 +95,8 @@ public class Interactable : MonoBehaviour
     void Interact()
     {
         Debug.Log($"Interacted with {gameObject.name}");
+        if (audioSource != null && interactSound != null)
+            audioSource.PlayOneShot(interactSound);
         onInteract?.Invoke();
     }
 

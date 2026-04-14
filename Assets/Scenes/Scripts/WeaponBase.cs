@@ -5,9 +5,24 @@ using StarterAssets;
 public abstract class WeaponBase : MonoBehaviour
 {
     protected Camera playerCamera;
-    protected Text statusText; 
-    protected Text actionText; 
+    protected Text statusText;
+    protected Text actionText;
     protected StarterAssetsInputs _input;
+
+    private Animator _playerAnimator;
+
+    protected void TriggerShootAnim()
+    {
+        if (_playerAnimator == null)
+            _playerAnimator = GetComponentInParent<Animator>();
+        if (_playerAnimator != null)
+            _playerAnimator.SetTrigger("Shoot");
+
+        // Broadcast shoot animation to other clients
+        var switcher = GetComponentInParent<StarterAssets.WeaponSwitcher>();
+        if (switcher != null)
+            switcher.NotifyShoot(switcher.OwnerClientId);
+    }
 
 
     public virtual void SetSharedReferences(Camera cam, Text status, Text action)

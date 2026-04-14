@@ -1,5 +1,4 @@
 using UnityEngine;
-using StarterAssets;
 
 public class BananaPeel : MonoBehaviour
 {
@@ -85,35 +84,12 @@ public class BananaPeel : MonoBehaviour
         Debug.Log($"Player tripped on banana peel for {playerTripDuration}s!");
 
         if (slipSound != null && audioSource != null)
-        {
             audioSource.PlayOneShot(slipSound, 0.8f);
-        }
 
-        FirstPersonController controller = player.GetComponent<FirstPersonController>();
-        if (controller != null)
-        {
-            StartCoroutine(SlowPlayer(controller));
-        }
-    }
-
-    System.Collections.IEnumerator SlowPlayer(FirstPersonController controller)
-    {
-        float originalSpeed = controller.MoveSpeed;
-        float originalSprintSpeed = controller.SprintSpeed;
-
-        controller.MoveSpeed = originalSpeed * 0.2f;
-        controller.SprintSpeed = originalSprintSpeed * 0.2f;
-
-        Debug.Log("Player movement slowed!");
-
-        yield return new WaitForSeconds(playerTripDuration);
-
-        controller.MoveSpeed = originalSpeed;
-        controller.SprintSpeed = originalSprintSpeed;
-
-        Debug.Log("Player movement restored!");
-
-        hasTrippedPlayer = false;
+        // Route through PlayerHealth ServerRpc so the slow reaches the correct owner client
+        PlayerHealth health = player.GetComponent<PlayerHealth>();
+        if (health != null)
+            health.ApplyBananaSlowServerRpc(playerTripDuration);
     }
 
     void OnDrawGizmos()

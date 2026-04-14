@@ -37,6 +37,14 @@ public class GameManager : NetworkBehaviour
     public GameObject winPanel;
     public GameObject losePanel;
 
+    [Header("Audio")]
+    public AudioClip roundStartSound;
+    public AudioClip roundWinSound;
+    public AudioClip roundLoseSound;
+    public AudioClip terminalBreakSound;
+    public AudioClip containmentBreachSound;
+    private AudioSource audioSource;
+
     // Synced state
     private NetworkVariable<float> networkRoundTime = new NetworkVariable<float>(
         0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
@@ -49,7 +57,7 @@ public class GameManager : NetworkBehaviour
 
     private float currentRoundTime;
     private float nextTerminalBreakTime;
-    private Terminal currentBrokenTerminal;
+    private List<Terminal> currentBrokenTerminals = new List<Terminal>();
     private float terminalBreakDeadline;
     private bool terminalNeedsRepair = false;
     private bool roundActive = false;
@@ -67,7 +75,11 @@ public class GameManager : NetworkBehaviour
         else
         {
             Destroy(gameObject);
+            return;
         }
+
+        audioSource = gameObject.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
     }
 
     void Start()
@@ -213,6 +225,7 @@ public class GameManager : NetworkBehaviour
         currentRoundTime = roundTime;
         networkRoundTime.Value = roundTime;
         terminalNeedsRepair = false;
+        currentBrokenTerminals.Clear();
         networkCurrentRound.Value++;
 
         // Reset all players
@@ -261,7 +274,7 @@ public class GameManager : NetworkBehaviour
         {
             if (monster != null)
             {
-                monster.chaseSpeed = 4f * (1f + monsterChaseSpeedScale * (round - 1));
+                monster.chaseSpeed = 3.2f * (1f + monsterChaseSpeedScale * (round - 1));
             }
         }
 
@@ -305,6 +318,9 @@ public class GameManager : NetworkBehaviour
     [ClientRpc]
     private void OnRoundStartClientRpc()
     {
+        if (audioSource != null && roundStartSound != null)
+            audioSource.PlayOneShot(roundStartSound);
+
         if (winPanel != null) winPanel.SetActive(false);
         if (losePanel != null) losePanel.SetActive(false);
 
@@ -344,6 +360,9 @@ public class GameManager : NetworkBehaviour
     {
         if (!IsServer) return;
 
+        Vector3 spawnPos = playerSpawnPoint != null ? playerSpawnPoint.position : Vector3.zero;
+        Quaternion spawnRot = playerSpawnPoint != null ? playerSpawnPoint.rotation : Quaternion.identity;
+
         for (int i = 0; i < activePlayers.Count; i++)
         {
             var playerObj = activePlayers[i];
@@ -353,6 +372,7 @@ public class GameManager : NetworkBehaviour
             if (health != null)
             {
                 health.ResetHealth();
+                health.WarpToSpawnClientRpc(spawnPos, spawnRot);
             }
         }
     }
@@ -365,47 +385,73 @@ public class GameManager : NetworkBehaviour
         foreach (Terminal terminal in allTerminals)
         {
             if (terminal != null && !terminal.isBroken)
-            {
                 workingTerminals.Add(terminal);
-            }
         }
 
         if (workingTerminals.Count == 0)
         {
-            // All terminals broken — reschedule check so scheduler doesn't stall
             float scaledInterval = Mathf.Max(minTerminalBreakInterval,
                 terminalBreakInterval - terminalBreakIntervalReduction * (networkCurrentRound.Value - 1));
             nextTerminalBreakTime = Time.time + scaledInterval;
             return;
         }
 
-        currentBrokenTerminal = workingTerminals[Random.Range(0, workingTerminals.Count)];
-        currentBrokenTerminal.BreakTerminal();
+        // Break one terminal per player, capped at available working terminals
+        int toBreak = Mathf.Min(activePlayers.Count, workingTerminals.Count);
+        ShuffleList(workingTerminals);
+
+        currentBrokenTerminals.Clear();
+        for (int i = 0; i < toBreak; i++)
+        {
+            workingTerminals[i].BreakTerminal();
+            currentBrokenTerminals.Add(workingTerminals[i]);
+            Debug.Log($"[GameManager] Terminal {workingTerminals[i].gameObject.name} has broken!");
+        }
 
         terminalNeedsRepair = true;
         terminalBreakDeadline = Time.time + terminalRepairTime;
 
-        Debug.Log($"Terminal {currentBrokenTerminal.gameObject.name} has broken! Fix it in {terminalRepairTime} seconds!");
+        string msg = toBreak > 1
+            ? $"{toBreak} TERMINAL MALFUNCTIONS! Fix them quickly!"
+            : "TERMINAL MALFUNCTION! Fix it quickly!";
+        UpdateWarningTextClientRpc(msg, true);
+        PlayTerminalBreakSoundClientRpc();
+    }
 
-        UpdateWarningTextClientRpc($"TERMINAL MALFUNCTION! Fix it quickly!", true);
+    [ClientRpc]
+    private void PlayTerminalBreakSoundClientRpc()
+    {
+        if (audioSource != null && terminalBreakSound != null)
+            audioSource.PlayOneShot(terminalBreakSound);
     }
 
     public void OnTerminalRepaired(Terminal terminal)
     {
         if (!IsServer) return;
+        if (!terminalNeedsRepair) return;
 
-        if (terminal == currentBrokenTerminal && terminalNeedsRepair)
+        currentBrokenTerminals.Remove(terminal);
+        Debug.Log($"[GameManager] Terminal repaired. Remaining broken: {currentBrokenTerminals.Count}");
+
+        if (currentBrokenTerminals.Count > 0)
         {
-            Debug.Log("Terminal repaired in time!");
+            // Still terminals left to repair — update warning text
+            string msg = currentBrokenTerminals.Count > 1
+                ? $"{currentBrokenTerminals.Count} TERMINALS still need repair!"
+                : "1 TERMINAL still needs repair!";
+            UpdateWarningTextClientRpc(msg, true);
+        }
+        else
+        {
+            // All repaired
             terminalNeedsRepair = false;
             lastWarningSeconds = -1;
-            currentBrokenTerminal = null;
 
             float scaledInterval = Mathf.Max(minTerminalBreakInterval,
                 terminalBreakInterval - terminalBreakIntervalReduction * (networkCurrentRound.Value - 1));
             nextTerminalBreakTime = Time.time + scaledInterval;
 
-            UpdateWarningTextClientRpc("Terminal repaired! All systems operational", false);
+            UpdateWarningTextClientRpc("All terminals repaired! Systems operational", false);
         }
     }
 
@@ -438,36 +484,46 @@ public class GameManager : NetworkBehaviour
             if (i == 0) firstMonster = inactiveMonsters[i];
         }
 
-        // Open doors near the first released monster
-        if (firstMonster != null && allDoors.Count > 0)
+        // Open cell doors nearest to the first released monster
+        if (firstMonster != null)
         {
-            allDoors.Sort((a, b) => {
-                if (a == null || b == null) return 0;
+            List<Door> cellDoors = new List<Door>();
+            foreach (Door d in allDoors)
+            {
+                if (d != null && d.isCellDoor) cellDoors.Add(d);
+            }
+
+            cellDoors.Sort((a, b) => {
                 float distA = Vector3.Distance(firstMonster.transform.position, a.transform.position);
                 float distB = Vector3.Distance(firstMonster.transform.position, b.transform.position);
                 return distA.CompareTo(distB);
             });
 
-            int doorsToOpen = Mathf.Min(2, allDoors.Count);
+            int doorsToOpen = Mathf.Min(2, cellDoors.Count);
             for (int i = 0; i < doorsToOpen; i++)
             {
-                Door door = allDoors[i];
-                if (door != null && !door.isOpen)
-                {
-                    door.ToggleDoor();
-                }
+                if (!cellDoors[i].isOpen)
+                    cellDoors[i].OpenDoor();
             }
         }
+
+        float scaledInterval = Mathf.Max(minTerminalBreakInterval,
+            terminalBreakInterval - terminalBreakIntervalReduction * (round - 1));
+        nextTerminalBreakTime = Time.time + scaledInterval;
 
         string warningMsg = released > 1
             ? $"CONTAINMENT BREACH! {released} MONSTERS RELEASED!"
             : "CONTAINMENT BREACH! SECTOR UNLOCKED!";
         UpdateWarningTextClientRpc(warningMsg, true);
         UpdateGameStatusClientRpc("DANGER! Monster is hunting you!", true);
+        PlayContainmentBreachSoundClientRpc();
+    }
 
-        float scaledInterval = Mathf.Max(minTerminalBreakInterval,
-            terminalBreakInterval - terminalBreakIntervalReduction * (round - 1));
-        nextTerminalBreakTime = Time.time + scaledInterval;
+    [ClientRpc]
+    private void PlayContainmentBreachSoundClientRpc()
+    {
+        if (audioSource != null && containmentBreachSound != null)
+            audioSource.PlayOneShot(containmentBreachSound);
     }
 
     [ClientRpc]
@@ -560,6 +616,12 @@ public class GameManager : NetworkBehaviour
     [ClientRpc]
     private void OnRoundEndClientRpc(bool playerWon, int roundReached)
     {
+        if (audioSource != null)
+        {
+            AudioClip clip = playerWon ? roundWinSound : roundLoseSound;
+            if (clip != null) audioSource.PlayOneShot(clip);
+        }
+
         if (playerWon)
         {
             if (winPanel != null) winPanel.SetActive(true);

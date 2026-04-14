@@ -20,6 +20,14 @@ public class PlayerHealth : NetworkBehaviour
     public AudioClip hurtSound;
     public AudioSource audioSource;
 
+    [Header("Death Animation")]
+    [Tooltip("Name of the animator layer that holds the death animation (weight 0 by default)")]
+    public string deathLayerName = "Death";
+
+    private bool isDead = false;
+
+
+
     public override void OnNetworkSpawn()
     {
         if (IsServer)
@@ -211,8 +219,35 @@ public class PlayerHealth : NetworkBehaviour
             GameManager.Instance.OnPlayerDeath(gameObject);
         }
 
-        // Tell owning client to enter spectator mode
+        // Play death animation and remove collision on all clients
+        PlayDeathClientRpc();
+
+        // Tell owning client to disable controls
         EnterSpectatorClientRpc();
+    }
+
+    [ClientRpc]
+    private void PlayDeathClientRpc()
+    {
+        // Enable death layer and restart the animation from the beginning
+        var animator = GetComponent<Animator>();
+        if (animator != null)
+        {
+            int layerIndex = animator.GetLayerIndex(deathLayerName);
+            if (layerIndex >= 0)
+            {
+                // Grab the state hash before setting weight so we can restart it from 0.
+                // The animator runs the death layer internally at weight 0, so by the time
+                // the player dies the animation is already at the end — we must replay it.
+                int stateHash = animator.GetCurrentAnimatorStateInfo(layerIndex).fullPathHash;
+                animator.SetLayerWeight(layerIndex, 1f);
+                animator.Play(stateHash, layerIndex, 0f);
+            }
+        }
+
+        // Remove CharacterController so dead body doesn't block movement
+        var cc = GetComponent<CharacterController>();
+        if (cc != null) cc.enabled = false;
     }
 
     [ClientRpc]
@@ -241,7 +276,41 @@ public class PlayerHealth : NetworkBehaviour
         var weaponSwitcher = GetComponentInChildren<WeaponSwitcher>();
         if (weaponSwitcher != null) weaponSwitcher.enabled = false;
 
+        isDead = true;
+
+        // Follow an alive player's camera if one exists
+        StartCoroutine(FindSpectatorTarget());
+
         Debug.Log("[PlayerHealth] Entering spectator mode");
+    }
+
+    private System.Collections.IEnumerator FindSpectatorTarget()
+    {
+        // Wait a frame so death state is fully applied before searching
+        yield return null;
+
+        if (GameManager.Instance == null) yield break;
+
+        foreach (var playerObj in GameManager.Instance.GetActivePlayers())
+        {
+            if (playerObj == null || playerObj == gameObject) continue;
+
+            var health = playerObj.GetComponent<PlayerHealth>();
+            if (health == null || health.GetCurrentHealth() <= 0) continue;
+
+            // Found an alive player — rebind Cinemachine to follow them
+            var targetCameraRoot = playerObj.transform.Find("PlayerCameraRoot");
+            if (targetCameraRoot == null) continue;
+
+            var allVCams = FindObjectsOfType<Cinemachine.CinemachineVirtualCamera>();
+            foreach (var vcam in allVCams)
+            {
+                if (vcam.GetComponentInParent<PlayerHealth>() != null) continue;
+                vcam.Follow = targetCameraRoot;
+                Debug.Log($"[PlayerHealth] Spectating {playerObj.name}");
+            }
+            yield break;
+        }
     }
 
     public void ResetHealth()
@@ -250,6 +319,21 @@ public class PlayerHealth : NetworkBehaviour
         {
             currentHealth.Value = maxHealth;
         }
+    }
+
+    [ClientRpc]
+    public void WarpToSpawnClientRpc(Vector3 position, Quaternion rotation)
+    {
+        if (!IsOwner) return;
+
+        // Disable CC before moving — CharacterController fights manual position sets
+        var cc = GetComponent<CharacterController>();
+        if (cc != null) cc.enabled = false;
+
+        transform.position = position;
+        transform.rotation = rotation;
+
+        if (cc != null) cc.enabled = true;
     }
 
     public void ReenableControls()
@@ -267,9 +351,59 @@ public class PlayerHealth : NetworkBehaviour
 
         var weaponSwitcher = GetComponentInChildren<WeaponSwitcher>();
         if (weaponSwitcher != null) weaponSwitcher.enabled = true;
+
+        if (isDead)
+        {
+            isDead = false;
+
+            // Restore collision
+            var cc = GetComponent<CharacterController>();
+            if (cc != null) cc.enabled = true;
+
+            // Hide death layer so normal animations take over again
+            var animator = GetComponent<Animator>();
+            if (animator != null)
+            {
+                int layerIndex = animator.GetLayerIndex(deathLayerName);
+                if (layerIndex >= 0)
+                    animator.SetLayerWeight(layerIndex, 0f);
+            }
+
+            // Rebind Cinemachine back to own camera root
+            var cameraRoot = transform.Find("PlayerCameraRoot");
+            if (cameraRoot != null) TryBindCinemachine(cameraRoot);
+        }
     }
 
     public float GetCurrentHealth() => currentHealth.Value;
+
+    [ServerRpc(RequireOwnership = false)]
+    public void ApplyBananaSlowServerRpc(float duration)
+    {
+        ApplyBananaSlowClientRpc(duration);
+    }
+
+    [ClientRpc]
+    private void ApplyBananaSlowClientRpc(float duration)
+    {
+        if (!IsOwner) return;
+        var fpc = GetComponent<FirstPersonController>();
+        if (fpc != null) StartCoroutine(BananaSlowCoroutine(fpc, duration));
+    }
+
+    private System.Collections.IEnumerator BananaSlowCoroutine(FirstPersonController fpc, float duration)
+    {
+        float originalSpeed = fpc.MoveSpeed;
+        float originalSprintSpeed = fpc.SprintSpeed;
+
+        fpc.MoveSpeed = originalSpeed * 0.6f;
+        fpc.SprintSpeed = originalSprintSpeed * 0.6f;
+
+        yield return new WaitForSeconds(duration);
+
+        fpc.MoveSpeed = originalSpeed;
+        fpc.SprintSpeed = originalSprintSpeed;
+    }
 
     void UpdateHealthUI()
     {

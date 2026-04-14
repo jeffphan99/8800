@@ -1000,6 +1000,7 @@ GameObject:
   - component: {fileID: 1948282272617021825}
   - component: {fileID: 4658384290843787288}
   - component: {fileID: 386492182835616500}
+  - component: {fileID: 2081487785224269252}
   - component: {fileID: 6707284999169628753}
   m_Layer: 3
   m_Name: StalkerMonster
@@ -1190,6 +1191,27 @@ AudioSource:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+--- !u!114 &2081487785224269252
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5202731350292384611}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 2527269659
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
 --- !u!114 &6707284999169628753
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1217,7 +1239,7 @@ MonoBehaviour:
   noiseSourceLayer:
     serializedVersion: 2
     m_Bits: 128
-  sleepLayDownSpeed: 2
+  getUpDuration: 1.5
   spawnPoint: {fileID: 0}
   debugToggleActive: 1
   footstepSound: {fileID: 8300000, guid: c718c6c1bc972eb408854a40b93225b0, type: 3}
@@ -1226,6 +1248,8 @@ MonoBehaviour:
   wakeUpVolume: 0.8
   lightBreakRadius: 4
   lightCheckInterval: 0.5
+  doorCheckRadius: 2.5
+  doorCheckInterval: 0.3
   affectedByFlashlight: 1
   flashlightSlowMultiplier: 0.3
   flashlightEffectDuration: 0.5
@@ -1236,8 +1260,12 @@ MonoBehaviour:
   visionBlockingLayers:
     serializedVersion: 2
     m_Bits: 0
-  lightCheckRadius: 5
+  brightLightCheckRadius: 5
+  brightLightCheckInterval: 0.3
   isEnraged: 0
+  jukeboxCalmRadius: 40
+  jukeboxCalmSpeedMultiplier: 0.3
+  litZoneDetectionRadius: 5
 --- !u!1 &5366713446147857044
 GameObject:
   m_ObjectHideFlags: 0
@@ -2229,7 +2257,7 @@ MonoBehaviour:
   noiseSourceLayer:
     serializedVersion: 2
     m_Bits: 0
-  sleepLayDownSpeed: 2
+  getUpDuration: 1.5
   spawnPoint: {fileID: 0}
   debugToggleActive: 0
   footstepSound: {fileID: 0}
@@ -2238,6 +2266,8 @@ MonoBehaviour:
   wakeUpVolume: 0.8
   lightBreakRadius: 4
   lightCheckInterval: 0.5
+  doorCheckRadius: 2.5
+  doorCheckInterval: 0.3
   affectedByFlashlight: 0
   flashlightSlowMultiplier: 0.3
   flashlightEffectDuration: 0.5

@@ -5,10 +5,10 @@ using StarterAssets;
 public class RepairToolWeapon : WeaponBase
 {
     [Header("Animation")]
-    [SerializeField] private Animator toolAnimator; 
-    [SerializeField] private string repairAnimationTrigger = "Repair"; 
-    [SerializeField] private string repairLoopBool = "IsRepairing"; 
-    [SerializeField] private bool useLoopingAnimation = true; 
+    [SerializeField] private Animator toolAnimator;
+    [SerializeField] private string repairAnimationTrigger = "Repair";
+    [SerializeField] private string repairLoopBool = "IsRepairing";
+    [SerializeField] private bool useLoopingAnimation = true;
 
     [Header("Audio")]
     [SerializeField] private AudioClip repairStartSound; 
@@ -72,36 +72,10 @@ public class RepairToolWeapon : WeaponBase
 
     void Update()
     {
-        // Check if any terminal minigame is active
-        bool minigameActive = CheckIfMinigameActive();
-
-        if (minigameActive && !isRepairing)
-        {
-            // Minigame just started
+        if (Terminal.AnyMinigameActive && !isRepairing)
             StartRepairAnimation();
-        }
-        else if (!minigameActive && isRepairing)
-        {
-            // Minigame just ended
+        else if (!Terminal.AnyMinigameActive && isRepairing)
             StopRepairAnimation();
-        }
-    }
-
-    bool CheckIfMinigameActive()
-    {
-        // Find active terminal with minigame
-        Terminal[] allTerminals = FindObjectsOfType<Terminal>();
-        foreach (Terminal terminal in allTerminals)
-        {
-            if (terminal.minigameActive)
-            {
-                activeTerminal = terminal;
-                return true;
-            }
-        }
-
-        activeTerminal = null;
-        return false;
     }
 
     void StartRepairAnimation()
@@ -109,20 +83,10 @@ public class RepairToolWeapon : WeaponBase
         isRepairing = true;
         Debug.Log("RepairTool: Starting repair animation");
 
-        // Play animation
         if (toolAnimator != null)
         {
-            if (useLoopingAnimation && !string.IsNullOrEmpty(repairLoopBool))
-            {
-    
-                toolAnimator.SetBool(repairLoopBool, true);
-            }
-
-            if (!string.IsNullOrEmpty(repairAnimationTrigger))
-            {
-
-                toolAnimator.SetTrigger(repairAnimationTrigger);
-            }
+            toolAnimator.speed = 2f;
+            toolAnimator.SetBool(repairLoopBool, true);
         }
 
         // Play start sound
@@ -168,9 +132,11 @@ public class RepairToolWeapon : WeaponBase
         Debug.Log("RepairTool: Stopping repair animation");
 
         // Stop animation
-        if (toolAnimator != null && !string.IsNullOrEmpty(repairLoopBool))
+        if (toolAnimator != null)
         {
             toolAnimator.SetBool(repairLoopBool, false);
+            toolAnimator.ResetTrigger(repairAnimationTrigger);
+            toolAnimator.speed = 1f;
         }
 
         // Play complete sound
@@ -250,10 +216,7 @@ public class RepairToolWeapon : WeaponBase
 
     }
 
-    public override void PrimaryAction()
-    {
-     
-    }
+    public override void PrimaryAction() { }
 
     public override void SecondaryAction()
     {

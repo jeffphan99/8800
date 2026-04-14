@@ -1,38 +1,48 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
+using Unity.Netcode;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
 
 namespace StarterAssets
 {
-    public class WeaponSwitcher : MonoBehaviour
+    public class WeaponSwitcher : NetworkBehaviour
     {
         [Header("Weapons")]
-        public WeaponBase[] weapons; // Array of all weapons (gun, melee, flashlight)
+        public WeaponBase[] weapons;
         private int currentWeaponIndex = 0;
 
         [Header("Shared UI")]
-        public Text statusText; // Shows ammo/battery/etc
-        public Text actionText; // Shows reload/recharge/etc
+        public Text statusText;
+        public Text actionText;
         public Camera playerCamera;
 
         [Header("Input")]
         public StarterAssetsInputs input;
 
+        [Header("Audio")]
+        public AudioClip switchSound;
+        private AudioSource audioSource;
+
+        [Header("Swap Animation")]
+        public Animator playerAnimator;
+
+        private bool isSwitching = false;
+
+        private NetworkVariable<int> networkWeaponIndex = new NetworkVariable<int>(
+            0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
         void Start()
         {
-            // Get input component if not assigned
             if (input == null)
             {
                 input = GetComponent<StarterAssetsInputs>();
                 if (input == null)
-                {
                     Debug.LogError("StarterAssetsInputs component not found!");
-                }
             }
 
-            // Find scene UI elements at runtime (can't assign scene objects to prefab fields)
             if (statusText == null)
             {
                 GameObject obj = GameObject.Find("Ammo");
@@ -44,16 +54,15 @@ namespace StarterAssets
                 if (obj != null) actionText = obj.GetComponent<Text>();
             }
             if (playerCamera == null)
-            {
                 playerCamera = Camera.main;
-            }
 
-            // Setup all weapons with shared references
+            if (playerAnimator == null)
+                playerAnimator = GetComponentInParent<Animator>();
+
             for (int i = 0; i < weapons.Length; i++)
             {
                 if (weapons[i] != null)
                 {
-                    Debug.Log($"Setting up weapon {i}: {weapons[i].gameObject.name}");
                     weapons[i].SetSharedReferences(playerCamera, statusText, actionText);
                     weapons[i].gameObject.SetActive(false);
                 }
@@ -63,63 +72,133 @@ namespace StarterAssets
                 }
             }
 
-            // Activate first weapon
-            SelectWeapon(0);
+            audioSource = gameObject.AddComponent<AudioSource>();
+            audioSource.playOnAwake = false;
+
+            // Initial equip is instant — no swap animation on startup
+            EquipDirect(0);
+        }
+
+        public override void OnNetworkSpawn()
+        {
+            base.OnNetworkSpawn();
+            // Non-owners apply the synced weapon index on spawn (handles late joiners)
+            if (!IsOwner)
+                EquipDirect(networkWeaponIndex.Value);
         }
 
         void Update()
         {
-            // Don't switch if current weapon is busy
-            if (weapons[currentWeaponIndex] != null && weapons[currentWeaponIndex].IsBusy())
-                return;
+            if (!IsOwner) return;
+            if (isSwitching) return;
+            if (weapons[currentWeaponIndex] != null && weapons[currentWeaponIndex].IsBusy()) return;
+            if (Terminal.AnyMinigameActive) return;
 
-            // Don't switch during minigame
-            if (Terminal.AnyMinigameActive)
-                return;
-
-            // Check for weapon slot input
             int slotInput = input.GetWeaponSlotInput();
             if (slotInput >= 0)
-            {
                 SelectWeapon(slotInput);
-            }
         }
 
         void SelectWeapon(int index)
         {
             if (index < 0 || index >= weapons.Length) return;
             if (weapons[index] == null) return;
-            if (index == currentWeaponIndex && weapons[index].gameObject.activeSelf) return; // Already equipped
+            if (index == currentWeaponIndex && weapons[index].gameObject.activeSelf) return;
 
-            // Unequip current weapon
+            // Owner runs locally for immediate feel; broadcasts to all other clients
+            StartCoroutine(SwapRoutine(index));
+            BroadcastSwapServerRpc(index, OwnerClientId);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void BroadcastSwapServerRpc(int newIndex, ulong ownerClientId)
+        {
+            networkWeaponIndex.Value = newIndex;
+            PlaySwapClientRpc(newIndex, ownerClientId);
+        }
+
+        [ClientRpc]
+        private void PlaySwapClientRpc(int newIndex, ulong ownerClientId)
+        {
+            // Owner already ran SwapRoutine locally
+            if (NetworkManager.Singleton.LocalClientId == ownerClientId) return;
+            StartCoroutine(SwapRoutine(newIndex));
+        }
+
+        IEnumerator SwapRoutine(int newIndex)
+        {
+            isSwitching = true;
+
+            if (playerAnimator != null)
+                playerAnimator.SetBool("Swap", true);
+
+            // Wait for the halfway point — arms fully down
+            yield return new WaitForSeconds(0.25f);
+
+            // Swap the weapon at the bottom of the arc
             if (weapons[currentWeaponIndex] != null)
             {
                 weapons[currentWeaponIndex].OnUnequip();
                 weapons[currentWeaponIndex].gameObject.SetActive(false);
             }
 
-            // Equip new weapon
-            currentWeaponIndex = index;
+            currentWeaponIndex = newIndex;
             weapons[currentWeaponIndex].gameObject.SetActive(true);
             weapons[currentWeaponIndex].OnEquip();
 
-            Debug.Log("Switched to: " + weapons[index].gameObject.name);
+            if (audioSource != null && switchSound != null)
+                audioSource.PlayOneShot(switchSound);
+
+            // Wait for the raise-back second half
+            yield return new WaitForSeconds(0.25f);
+
+            if (playerAnimator != null)
+                playerAnimator.SetBool("Swap", false);
+
+            isSwitching = false;
+        }
+
+        // Called by WeaponBase when shooting — owner already played it locally, this syncs to others
+        public void NotifyShoot(ulong ownerClientId)
+        {
+            if (!IsSpawned) return;
+            BroadcastShootServerRpc(ownerClientId);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        private void BroadcastShootServerRpc(ulong ownerClientId)
+        {
+            PlayShootAnimClientRpc(ownerClientId);
+        }
+
+        [ClientRpc]
+        private void PlayShootAnimClientRpc(ulong ownerClientId)
+        {
+            // Owner already triggered it locally
+            if (NetworkManager.Singleton.LocalClientId == ownerClientId) return;
+            if (playerAnimator != null)
+                playerAnimator.SetTrigger("Shoot");
+        }
+
+        // Used on startup or for non-owner sync — no animation, just swap immediately
+        void EquipDirect(int index)
+        {
+            if (index < 0 || index >= weapons.Length) return;
+            if (weapons[index] == null) return;
+
+            if (currentWeaponIndex != index && weapons[currentWeaponIndex] != null)
+                weapons[currentWeaponIndex].gameObject.SetActive(false);
+
+            currentWeaponIndex = index;
+            weapons[currentWeaponIndex].gameObject.SetActive(true);
+            weapons[currentWeaponIndex].OnEquip();
         }
 
         void CycleWeapon(int direction)
         {
             int newIndex = currentWeaponIndex + direction;
-
-            // Wrap around
-            if (newIndex >= weapons.Length)
-            {
-                newIndex = 0;
-            }
-            else if (newIndex < 0)
-            {
-                newIndex = weapons.Length - 1;
-            }
-
+            if (newIndex >= weapons.Length) newIndex = 0;
+            else if (newIndex < 0) newIndex = weapons.Length - 1;
             SelectWeapon(newIndex);
         }
 
@@ -127,6 +206,5 @@ namespace StarterAssets
         {
             return weapons[currentWeaponIndex];
         }
-
     }
 }

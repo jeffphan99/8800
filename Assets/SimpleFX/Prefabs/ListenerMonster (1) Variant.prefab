@@ -149,7 +149,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 529870343130307849, guid: f150bd5abb247db42b3b70046d1006f4, type: 3}
       propertyPath: m_Materials.Array.data[0]
-      value:
+      value: 
       objectReference: {fileID: 2100000, guid: 04e71246c75bcad4bb526ab1430652ce, type: 2}
     - target: {fileID: 670197830817226146, guid: f150bd5abb247db42b3b70046d1006f4, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1199,6 +1199,10 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0.07010588
       objectReference: {fileID: 0}
+    - target: {fileID: 7350722977386050793, guid: f150bd5abb247db42b3b70046d1006f4, type: 3}
+      propertyPath: GlobalObjectIdHash
+      value: 1017944172
+      objectReference: {fileID: 0}
     - target: {fileID: 7606712098606052709, guid: f150bd5abb247db42b3b70046d1006f4, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0.053293124
@@ -1709,7 +1713,7 @@ MonoBehaviour:
   noiseSourceLayer:
     serializedVersion: 2
     m_Bits: 128
-  sleepLayDownSpeed: 2
+  getUpDuration: 1.5
   spawnPoint: {fileID: 0}
   debugToggleActive: 1
   footstepSound: {fileID: 8300000, guid: c718c6c1bc972eb408854a40b93225b0, type: 3}
@@ -1718,6 +1722,8 @@ MonoBehaviour:
   wakeUpVolume: 0.8
   lightBreakRadius: 4
   lightCheckInterval: 0.5
+  doorCheckRadius: 2.5
+  doorCheckInterval: 0.3
   affectedByFlashlight: 0
   flashlightSlowMultiplier: 0.3
   flashlightEffectDuration: 0.5

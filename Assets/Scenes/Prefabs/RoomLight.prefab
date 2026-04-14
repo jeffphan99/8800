@@ -171,7 +171,7 @@ MonoBehaviour:
   canBeBroken: 1
   isOn: 1
   isBroken: 0
-  toggleSound: {fileID: 0}
+  toggleSound: {fileID: 8300000, guid: d04f5bbc781108f46aebda14ee5bf8d4, type: 3}
   breakSound: {fileID: 0}
   sparksEffect: {fileID: 0}
   sparksDuration: 1
