@@ -686,7 +686,7 @@ public class MonsterAI : NetworkBehaviour
         StartCoroutine(FreezeCoroutine(duration));
     }
 
-    private bool isFrozen = false;
+    protected bool isFrozen = false;
 
     IEnumerator FreezeCoroutine(float duration)
     {
