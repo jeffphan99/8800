@@ -1,5 +1,17 @@
 # Space Ape Logistics Inc.
 
+## How to Play Local Multiplayer
+
+One person runs the game through the Unity Editor (they become the host), and the other runs a built executable on the same machine.
+
+1. **Build the game** — File → Build Settings → Build. Point it at the `Builds/Client/` folder.
+2. **Start the Editor first** — hit Play. It automatically starts hosting on port 9797.
+3. **Launch the build** — run the .exe. It automatically connects to the Editor.
+
+Both sides are pre-configured, nothing needs to be changed for same-machine play. If you want to test over a local network instead, open `Assets/StreamingAssets/StartupConfiguration.json` and change `ServerIP` from `127.0.0.1` to the host machine's local IP.
+
+---
+
 ## Project Structure
 All scripts are in: `Assets/Scenes/Scripts/`
 
