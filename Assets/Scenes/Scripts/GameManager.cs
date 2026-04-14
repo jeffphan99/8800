@@ -12,7 +12,7 @@ public class GameManager : NetworkBehaviour
     public float roundTime = 120f;
     public float terminalBreakInterval = 30f;
     public float terminalRepairTime = 15f;
-    public float minTerminalBreakInterval = 15f;
+    public float minTerminalBreakInterval = 7f;
     public float terminalBreakIntervalReduction = 2f;
 
     [Header("Difficulty Scaling")]

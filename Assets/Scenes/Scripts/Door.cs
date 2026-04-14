@@ -53,6 +53,8 @@ public class Door : NetworkBehaviour
         audioSource.playOnAwake = false;
 
         navObstacle = doorTransform.GetComponent<NavMeshObstacle>();
+        if (navObstacle != null)
+            navObstacle.carving = !startsOpen;
     }
 
     void Start()
