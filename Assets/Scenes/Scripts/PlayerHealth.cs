@@ -26,7 +26,11 @@ public class PlayerHealth : NetworkBehaviour
 
     private bool isDead = false;
 
-
+    // Run animation sync — owner writes velocity state, non-owners read it
+    private NetworkVariable<bool> networkIsRunning = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+    private CharacterController _syncCC;
+    private Animator _syncAnimator;
 
     public override void OnNetworkSpawn()
     {
@@ -36,6 +40,10 @@ public class PlayerHealth : NetworkBehaviour
         }
 
         currentHealth.OnValueChanged += OnHealthChanged;
+
+        _syncAnimator = GetComponentInChildren<Animator>();
+        if (!IsOwner)
+            networkIsRunning.OnValueChanged += OnRunningChanged;
 
         if (IsOwner)
         {
@@ -58,6 +66,8 @@ public class PlayerHealth : NetworkBehaviour
     public override void OnNetworkDespawn()
     {
         currentHealth.OnValueChanged -= OnHealthChanged;
+        if (!IsOwner)
+            networkIsRunning.OnValueChanged -= OnRunningChanged;
 
         if (LocalPlayer == gameObject)
         {
@@ -403,6 +413,24 @@ public class PlayerHealth : NetworkBehaviour
 
         fpc.MoveSpeed = originalSpeed;
         fpc.SprintSpeed = originalSprintSpeed;
+    }
+
+    void Update()
+    {
+        if (!IsOwner || !IsSpawned) return;
+
+        if (_syncCC == null) _syncCC = GetComponent<CharacterController>();
+        if (_syncCC == null) return;
+
+        bool running = new Vector3(_syncCC.velocity.x, 0f, _syncCC.velocity.z).magnitude > 0.1f;
+        if (running != networkIsRunning.Value)
+            networkIsRunning.Value = running;
+    }
+
+    private void OnRunningChanged(bool prev, bool next)
+    {
+        if (_syncAnimator != null)
+            _syncAnimator.SetBool("Run", next);
     }
 
     void UpdateHealthUI()
